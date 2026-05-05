@@ -1,45 +1,97 @@
+import { connection } from "next/server";
+import Link from "next/link";
+import { signOut } from "@/app/actions";
+import { FeedbackMessage } from "@/components/feedback-message";
+import { SubmitButton } from "@/components/form-buttons";
+import { AssetFilters } from "@/components/dashboard/asset-filters";
+import { AssetForm } from "@/components/dashboard/asset-form";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { AssetTable } from "@/components/dashboard/asset-table";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { TenantList } from "@/components/dashboard/tenant-list";
+import { getInventoryDashboard } from "@/lib/inventory-repository";
 import {
-  activities,
-  assets,
+  assetStatuses,
   formatNumber,
-  tenants,
+  type AssetStatus,
+  type Tenant,
 } from "@/lib/inventory-data";
+import { getCurrentAccess } from "@/lib/supabase-server";
 
-const totalAssets = tenants.reduce((total, tenant) => total + tenant.assets, 0);
-const totalPending = tenants.reduce((total, tenant) => total + tenant.pending, 0);
-const averageCompliance = Math.round(
-  tenants.reduce((total, tenant) => total + tenant.compliance, 0) /
-    tenants.length,
-);
+type HomeProps = {
+  searchParams: Promise<{
+    tenant?: string;
+    status?: string;
+    q?: string;
+    success?: string;
+    error?: string;
+  }>;
+};
 
-const metrics = [
-  {
-    label: "Tenants ativos",
-    value: String(tenants.length),
-    detail: "Organizacoes com inventario segregado",
-  },
-  {
-    label: "Ativos cadastrados",
-    value: formatNumber(totalAssets),
-    detail: "Equipamentos, perifericos e infraestrutura",
-  },
-  {
-    label: "Pendencias abertas",
-    value: formatNumber(totalPending),
-    detail: "Itens aguardando acao operacional",
-  },
-  {
-    label: "Conformidade media",
-    value: `${averageCompliance}%`,
-    detail: "Baseada em dados completos por tenant",
-  },
-];
+function getAverageCompliance(tenants: Tenant[]) {
+  if (tenants.length === 0) {
+    return 0;
+  }
 
-export default function Home() {
+  return Math.round(
+    tenants.reduce((total, tenant) => total + tenant.compliance, 0) /
+      tenants.length,
+  );
+}
+
+function normalizeStatus(status?: string): AssetStatus | undefined {
+  if (assetStatuses.includes(status as AssetStatus)) {
+    return status as AssetStatus;
+  }
+
+  return undefined;
+}
+
+export default async function Home({ searchParams }: HomeProps) {
+  await connection();
+
+  const params = await searchParams;
+  const filters = {
+    tenantId: params.tenant?.trim() || undefined,
+    status: normalizeStatus(params.status),
+    query: params.q?.trim() || undefined,
+  };
+  const [access, dashboard] = await Promise.all([
+    getCurrentAccess(),
+    getInventoryDashboard(filters),
+  ]);
+  const { activities, assets, source, tenants } = dashboard;
+  const { user } = access;
+  const canManage = Boolean(access.canManageAssets && source === "supabase");
+  const totalAssets = tenants.reduce((total, tenant) => total + tenant.assets, 0);
+  const totalPending = tenants.reduce(
+    (total, tenant) => total + tenant.pending,
+    0,
+  );
+  const averageCompliance = getAverageCompliance(tenants);
+  const metrics = [
+    {
+      label: "Tenants ativos",
+      value: String(tenants.length),
+      detail: "Organizacoes com inventario segregado",
+    },
+    {
+      label: "Ativos cadastrados",
+      value: formatNumber(totalAssets),
+      detail: "Equipamentos, perifericos e infraestrutura",
+    },
+    {
+      label: "Pendencias abertas",
+      value: formatNumber(totalPending),
+      detail: "Itens aguardando acao operacional",
+    },
+    {
+      label: "Conformidade media",
+      value: `${averageCompliance}%`,
+      detail: "Baseada em dados completos por tenant",
+    },
+  ];
+
   return (
     <main className="min-h-screen bg-zinc-50 text-zinc-950">
       <section className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 py-8 sm:px-8 lg:px-10">
@@ -59,6 +111,30 @@ export default function Home() {
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
+            {user ? (
+              <form action={signOut}>
+                <SubmitButton
+                  label="Sair"
+                  pendingLabel="Saindo..."
+                  className="inline-flex h-11 items-center justify-center rounded-md border border-zinc-300 bg-white px-5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
+                />
+              </form>
+            ) : (
+              <Link
+                href="/login"
+                className="inline-flex h-11 items-center justify-center rounded-md border border-zinc-300 bg-white px-5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
+              >
+                Entrar
+              </Link>
+            )}
+            {access.isGlobalAdmin ? (
+              <Link
+                href="/admin"
+                className="inline-flex h-11 items-center justify-center rounded-md border border-zinc-300 bg-white px-5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
+              >
+                Admin
+              </Link>
+            ) : null}
             <a
               href="#tenants"
               className="inline-flex h-11 items-center justify-center rounded-md border border-zinc-300 bg-white px-5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
@@ -73,6 +149,26 @@ export default function Home() {
             </a>
           </div>
         </header>
+
+        <FeedbackMessage success={params.success} error={params.error} />
+
+        <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-zinc-950">
+              {user ? "Sessao autenticada" : "Modo demonstracao"}
+            </p>
+            <p className="text-sm text-zinc-500">
+              {user
+                ? `${user.email} - ${
+                    access.isGlobalAdmin ? "admin global" : "perfil por tenant"
+                  }`
+                : "Entre para consultar dados reais com RLS e operar ativos."}
+            </p>
+          </div>
+          <span className="text-sm font-medium text-teal-700">
+            {source === "supabase" ? "Supabase ativo" : "Fallback mock"}
+          </span>
+        </div>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {metrics.map((metric) => (
@@ -123,7 +219,22 @@ export default function Home() {
           </article>
         </section>
 
-        <AssetTable assets={assets} />
+        <AssetFilters
+          tenants={tenants}
+          selectedTenant={filters.tenantId}
+          selectedStatus={filters.status}
+          query={filters.query}
+        />
+
+        <AssetForm tenants={tenants} disabled={!canManage} />
+
+        <AssetTable assets={assets} canManage={canManage} />
+
+        {source === "mock" ? (
+          <p className="text-xs text-zinc-500">
+            Dados mockados em uso ate a configuracao do Supabase.
+          </p>
+        ) : null}
       </section>
     </main>
   );

@@ -16,7 +16,36 @@ status operacional e eventos recentes em um dashboard unico.
 
 - `src/app/page.tsx`: composicao do dashboard principal.
 - `src/components/dashboard`: cards, tabela, lista de tenants e eventos.
-- `src/lib/inventory-data.ts`: tipos e dados mockados do dominio.
+- `src/lib/inventory-repository.ts`: leitura do dashboard no Supabase com
+  fallback para mocks.
+- `src/lib/inventory-data.ts`: tipos do dominio e dados mockados de fallback.
+- `supabase/migrations`: schema multi-tenant com RLS.
+- `supabase/seed.sql`: carga inicial com os dados da primeira versao.
+
+## Supabase
+
+Crie um arquivo `.env.local` com:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL="https://seu-projeto.supabase.co"
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="sua-chave-publica"
+SUPABASE_SERVICE_ROLE_KEY="sua-service-role-key"
+```
+
+Enquanto as telas de autenticacao ainda nao existem, `SUPABASE_SERVICE_ROLE_KEY`
+permite que o dashboard server-side leia os dados iniciais. Mantenha essa chave
+somente no servidor. Depois da autenticacao, o app deve usar sessoes de usuario
+e deixar as policies de RLS filtrarem dados por tenant.
+
+Para preparar o banco, aplique `supabase/migrations/001_inventory_multitenant.sql`
+no Supabase e depois rode `supabase/seed.sql`.
+
+Depois que um usuario criar conta pela tela `/login`, vincule-o a um tenant em
+`tenant_members`. O arquivo `supabase/memberships.example.sql` tem um exemplo.
+
+Para um administrador global com acesso a todos os clientes, aplique tambem a
+migration `supabase/migrations/002_global_admins.sql` e rode
+`supabase/global-admin.example.sql` trocando o e-mail pelo usuario correto.
 
 ## Getting Started
 

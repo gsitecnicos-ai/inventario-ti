@@ -2,6 +2,15 @@ export type AssetStatus = "Em uso" | "Atencao" | "Manutencao" | "Estoque";
 
 export type AssetCriticality = "Baixa" | "Media" | "Alta";
 
+export const assetStatuses: AssetStatus[] = [
+  "Em uso",
+  "Atencao",
+  "Manutencao",
+  "Estoque",
+];
+
+export const assetCriticalities: AssetCriticality[] = ["Baixa", "Media", "Alta"];
+
 export type Tenant = {
   id: string;
   name: string;
@@ -16,6 +25,7 @@ export type Asset = {
   id: string;
   tag: string;
   tenantId: string;
+  tenantName: string;
   type: string;
   model: string;
   owner: string;
@@ -77,6 +87,7 @@ export const assets: Asset[] = [
     id: "asset-001",
     tag: "NTB-1048",
     tenantId: "aurora",
+    tenantName: "Grupo Aurora",
     type: "Notebook",
     model: "ThinkPad T14",
     owner: "Mariana Alves",
@@ -89,6 +100,7 @@ export const assets: Asset[] = [
     id: "asset-002",
     tag: "MON-0217",
     tenantId: "norte-energia",
+    tenantName: "Norte Energia",
     type: "Monitor",
     model: "Dell P2422H",
     owner: "Paulo Mendes",
@@ -101,6 +113,7 @@ export const assets: Asset[] = [
     id: "asset-003",
     tag: "SRV-0003",
     tenantId: "aurora",
+    tenantName: "Grupo Aurora",
     type: "Servidor",
     model: "PowerEdge R650",
     owner: "Infraestrutura",
@@ -113,6 +126,7 @@ export const assets: Asset[] = [
     id: "asset-004",
     tag: "CEL-0891",
     tenantId: "clara-seguros",
+    tenantName: "Clara Seguros",
     type: "Celular",
     model: "Galaxy A55",
     owner: "Ana Ribeiro",
@@ -125,6 +139,7 @@ export const assets: Asset[] = [
     id: "asset-005",
     tag: "SWI-0144",
     tenantId: "metro-saude",
+    tenantName: "Metro Saude",
     type: "Switch",
     model: "Aruba 2930F",
     owner: "Redes",
