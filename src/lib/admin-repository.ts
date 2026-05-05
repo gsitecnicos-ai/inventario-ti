@@ -28,10 +28,18 @@ export type AdminGlobalAdmin = {
   createdAt: string;
 };
 
+export type AdminUser = {
+  id: string;
+  email: string;
+  createdAt: string;
+  lastSignInAt: string | null;
+};
+
 export type AdminDashboardData = {
   tenants: AdminTenant[];
   members: AdminTenantMember[];
   globalAdmins: AdminGlobalAdmin[];
+  users: AdminUser[];
 };
 
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
@@ -89,6 +97,12 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
 
   return {
     tenants: tenantsResult.data,
+    users: usersResult.data.users.map((user) => ({
+      id: user.id,
+      email: user.email ?? "sem-email",
+      createdAt: user.created_at,
+      lastSignInAt: user.last_sign_in_at ?? null,
+    })),
     members: membersResult.data.map((member) => ({
       tenantId: member.tenant_id,
       userId: member.user_id,

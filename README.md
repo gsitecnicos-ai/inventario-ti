@@ -14,7 +14,11 @@ status operacional e eventos recentes em um dashboard unico.
 
 ## Estrutura Atual
 
-- `src/app/page.tsx`: composicao do dashboard principal.
+- `src/app/page.tsx`: roteador inicial de sessao para login, dashboard ou
+  gestao de usuarios.
+- `src/app/dashboard/page.tsx`: composicao do dashboard principal.
+- `src/app/admin/users/page.tsx`: gestao de usuarios, vinculos e admins
+  globais.
 - `src/components/dashboard`: cards, tabela, lista de tenants e eventos.
 - `src/lib/inventory-repository.ts`: leitura do dashboard no Supabase com
   fallback para mocks.

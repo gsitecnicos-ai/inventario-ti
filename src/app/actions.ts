@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   createAdminSupabaseClient,
   createAuthenticatedSupabaseClient,
+  getCurrentAccess,
   requireGlobalAdmin,
 } from "@/lib/supabase-server";
 import {
@@ -92,6 +93,12 @@ async function getSupabaseForGlobalAdmin() {
   return supabase;
 }
 
+async function getSignedInRedirectPath() {
+  const access = await getCurrentAccess();
+
+  return access.isGlobalAdmin ? "/admin/users" : "/dashboard";
+}
+
 async function getUserIdByEmail(email: string) {
   const supabase = await getSupabaseForGlobalAdmin();
   const normalizedEmail = email.trim().toLowerCase();
@@ -159,8 +166,10 @@ export async function signIn(formData: FormData) {
     redirectWithMessage("/login", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  redirectWithMessage("/", "success", "Login realizado.");
+  const redirectPath = await getSignedInRedirectPath();
+
+  revalidatePath(redirectPath);
+  redirectWithMessage(redirectPath, "success", "Login realizado.");
 }
 
 export async function signUp(formData: FormData) {
@@ -198,6 +207,8 @@ export async function signOut() {
   }
 
   revalidatePath("/");
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
   redirectWithMessage("/login", "success", "Sessao encerrada.");
 }
 
@@ -240,11 +251,11 @@ export async function createAsset(formData: FormData) {
       description: `${tag} cadastrado no inventario.`,
     });
   } catch (error) {
-    redirectWithMessage("/", "error", getErrorMessage(error));
+    redirectWithMessage("/dashboard", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  redirectWithMessage("/", "success", "Ativo cadastrado.");
+  revalidatePath("/dashboard");
+  redirectWithMessage("/dashboard", "success", "Ativo cadastrado.");
 }
 
 export async function updateAsset(formData: FormData) {
@@ -284,11 +295,11 @@ export async function updateAsset(formData: FormData) {
       description: `${asset.tag} atualizado para ${status} / ${criticality}.`,
     });
   } catch (error) {
-    redirectWithMessage("/", "error", getErrorMessage(error));
+    redirectWithMessage("/dashboard", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  redirectWithMessage("/", "success", "Ativo atualizado.");
+  revalidatePath("/dashboard");
+  redirectWithMessage("/dashboard", "success", "Ativo atualizado.");
 }
 
 export async function deleteAsset(formData: FormData) {
@@ -318,11 +329,11 @@ export async function deleteAsset(formData: FormData) {
       description: `${asset.tag} removido do inventario.`,
     });
   } catch (error) {
-    redirectWithMessage("/", "error", getErrorMessage(error));
+    redirectWithMessage("/dashboard", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  redirectWithMessage("/", "success", "Ativo removido.");
+  revalidatePath("/dashboard");
+  redirectWithMessage("/dashboard", "success", "Ativo removido.");
 }
 
 export async function createTenant(formData: FormData) {
@@ -355,12 +366,39 @@ export async function createTenant(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
-    redirectWithMessage("/admin", "error", getErrorMessage(error));
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  redirectWithMessage("/admin", "success", "Tenant criado.");
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Tenant criado.");
+}
+
+export async function createManagedUser(formData: FormData) {
+  try {
+    const supabase = await getSupabaseForGlobalAdmin();
+    const email = readRequiredString(formData, "email").toLowerCase();
+    const password = readRequiredString(formData, "password");
+
+    if (password.length < 6) {
+      throw new Error("A senha precisa ter pelo menos 6 caracteres.");
+    }
+
+    const { error } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
+  }
+
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Usuario criado.");
 }
 
 export async function addTenantMember(formData: FormData) {
@@ -381,12 +419,12 @@ export async function addTenantMember(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
-    redirectWithMessage("/admin", "error", getErrorMessage(error));
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  redirectWithMessage("/admin", "success", "Usuario vinculado ao tenant.");
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Usuario vinculado ao tenant.");
 }
 
 export async function updateTenantMemberRole(formData: FormData) {
@@ -406,12 +444,12 @@ export async function updateTenantMemberRole(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
-    redirectWithMessage("/admin", "error", getErrorMessage(error));
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  redirectWithMessage("/admin", "success", "Perfil atualizado.");
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Perfil atualizado.");
 }
 
 export async function removeTenantMember(formData: FormData) {
@@ -430,12 +468,12 @@ export async function removeTenantMember(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
-    redirectWithMessage("/admin", "error", getErrorMessage(error));
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  redirectWithMessage("/admin", "success", "Usuario removido do tenant.");
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Usuario removido do tenant.");
 }
 
 export async function addGlobalAdmin(formData: FormData) {
@@ -452,12 +490,12 @@ export async function addGlobalAdmin(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
-    redirectWithMessage("/admin", "error", getErrorMessage(error));
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  redirectWithMessage("/admin", "success", "Admin global promovido.");
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Admin global promovido.");
 }
 
 export async function removeGlobalAdmin(formData: FormData) {
@@ -474,10 +512,10 @@ export async function removeGlobalAdmin(formData: FormData) {
       throw new Error(error.message);
     }
   } catch (error) {
-    redirectWithMessage("/admin", "error", getErrorMessage(error));
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
   }
 
-  revalidatePath("/");
-  revalidatePath("/admin");
-  redirectWithMessage("/admin", "success", "Admin global removido.");
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Admin global removido.");
 }

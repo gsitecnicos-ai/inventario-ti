@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { signIn, signUp } from "@/app/actions";
 import { FeedbackMessage } from "@/components/feedback-message";
 import { SubmitButton } from "@/components/form-buttons";
-import { getCurrentUser } from "@/lib/supabase-server";
+import { getCurrentAccess } from "@/lib/supabase-server";
 
 type LoginPageProps = {
   searchParams: Promise<{
@@ -12,11 +12,11 @@ type LoginPageProps = {
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const user = await getCurrentUser();
+  const access = await getCurrentAccess();
   const params = await searchParams;
 
-  if (user) {
-    redirect("/");
+  if (access.user) {
+    redirect(access.isGlobalAdmin ? "/admin/users" : "/dashboard");
   }
 
   return (
@@ -31,7 +31,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </h1>
           <p className="mt-4 max-w-xl text-base leading-7 text-zinc-600">
             A sessao Supabase ativa as policies RLS para leitura e gravacao dos
-            dados permitidos ao usuario.
+            dados permitidos ao usuario. Se a sessao ja existir, voce sera
+            direcionado automaticamente para a area correta.
           </p>
         </div>
 
