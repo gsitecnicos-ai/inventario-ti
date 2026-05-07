@@ -1,4 +1,6 @@
+import Image from "next/image";
 import { redirect } from "next/navigation";
+
 import { signIn } from "@/app/actions";
 import { FeedbackMessage } from "@/components/feedback-message";
 import { SubmitButton } from "@/components/form-buttons";
@@ -11,7 +13,9 @@ type LoginPageProps = {
   }>;
 };
 
-export default async function LoginPage({ searchParams }: LoginPageProps) {
+export default async function LoginPage({
+  searchParams,
+}: LoginPageProps) {
   const access = await getCurrentAccess();
   const params = await searchParams;
 
@@ -24,34 +28,49 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <section className="mx-auto grid min-h-[calc(100vh-5rem)] w-full max-w-5xl items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="flex flex-col justify-center">
           <div className="flex items-center gap-4">
-            <div className="grid size-16 place-items-center rounded-md bg-zinc-950 text-2xl font-semibold tracking-normal text-white">
-              GSI
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-md bg-white shadow-sm">
+              <Image
+                src="/logo.png"
+                alt="GSI Tecnologia"
+                width={64}
+                height={64}
+                className="object-contain"
+                priority
+              />
             </div>
+
             <div>
               <p className="text-xl font-semibold text-zinc-950">
                 Soluções Inteligentes
               </p>
-              <p className="mt-1 text-sm font-medium uppercase text-teal-700">
+
+              <p className="mt-1 text-sm font-medium uppercase tracking-wide text-teal-700">
                 Inventários
               </p>
             </div>
           </div>
-          <h1 className="mt-8 max-w-xl text-3xl font-semibold sm:text-4xl">
+
+          <h1 className="mt-8 max-w-xl text-3xl font-semibold leading-tight sm:text-4xl">
             Controle de ativos por empresa com acesso segregado
           </h1>
+
           <p className="mt-4 max-w-xl text-base leading-7 text-zinc-600">
-            Entre com uma conta criada pelo administrador global. Cada usuario
-            acessa somente a empresa vinculada ao seu perfil.
+            Entre com uma conta criada pelo administrador global.
+            Cada usuário acessa somente a empresa vinculada ao seu perfil.
           </p>
         </div>
 
         <div className="grid gap-4">
-          <FeedbackMessage success={params.success} error={params.error} />
+          <FeedbackMessage
+            success={params.success}
+            error={params.error}
+          />
+
           <AuthForm
             title="Entrar"
             action={signIn}
             buttonLabel="Entrar"
-            helper="Sem cadastro publico. Solicite o acesso ao administrador do sistema."
+            helper="Sem cadastro público. Solicite acesso ao administrador do sistema."
           />
         </div>
       </section>
@@ -66,36 +85,55 @@ type AuthFormProps = {
   helper: string;
 };
 
-function AuthForm({ title, action, buttonLabel, helper }: AuthFormProps) {
+function AuthForm({
+  title,
+  action,
+  buttonLabel,
+  helper,
+}: AuthFormProps) {
   return (
-    <form action={action} className="rounded-lg border border-zinc-200 bg-white p-5">
-      <h2 className="text-lg font-semibold text-zinc-950">{title}</h2>
-      <p className="mt-1 text-sm text-zinc-500">{helper}</p>
+    <form
+      action={action}
+      className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
+    >
+      <h2 className="text-lg font-semibold text-zinc-950">
+        {title}
+      </h2>
 
-      <div className="mt-4 grid gap-3">
+      <p className="mt-1 text-sm leading-6 text-zinc-500">
+        {helper}
+      </p>
+
+      <div className="mt-5 grid gap-4">
         <label className="grid gap-1.5 text-sm font-medium text-zinc-700">
           E-mail
+
           <input
             name="email"
             type="email"
             required
-            className="h-11 rounded-md border border-zinc-300 px-3 text-sm font-normal text-zinc-900"
+            placeholder="seuemail@empresa.com"
+            className="h-11 rounded-md border border-zinc-300 px-3 text-sm font-normal text-zinc-900 outline-none transition focus:border-zinc-950"
           />
         </label>
+
         <label className="grid gap-1.5 text-sm font-medium text-zinc-700">
           Senha
+
           <input
             name="password"
             type="password"
             required
             minLength={6}
-            className="h-11 rounded-md border border-zinc-300 px-3 text-sm font-normal text-zinc-900"
+            placeholder="••••••••"
+            className="h-11 rounded-md border border-zinc-300 px-3 text-sm font-normal text-zinc-900 outline-none transition focus:border-zinc-950"
           />
         </label>
+
         <SubmitButton
           label={buttonLabel}
           pendingLabel="Processando..."
-          className="h-11 rounded-md bg-zinc-950 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+          className="mt-2 h-11 rounded-md bg-zinc-950 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
         />
       </div>
     </form>
