@@ -44,19 +44,18 @@ export default async function LoginPage({
                 Soluções Inteligentes
               </p>
 
-              <p className="mt-1 text-sm font-medium uppercase tracking-wide text-teal-700">
+              <p className="mt-1 text-sm font-medium uppercase tracking-wide text-blue-700">
                 Inventários
               </p>
             </div>
           </div>
 
           <h1 className="mt-8 max-w-xl text-3xl font-semibold leading-tight sm:text-4xl">
-            Controle de ativos por empresa com acesso segregado
+            Solução empresarial para controle e administração de ativos de TI
           </h1>
 
           <p className="mt-4 max-w-xl text-base leading-7 text-zinc-600">
-            Entre com uma conta criada pelo administrador global.
-            Cada usuário acessa somente a empresa vinculada ao seu perfil.
+            Centralize a gestão dos ativos da sua organização em uma plataforma segura, com controle de acesso corporativo e gerenciamento inteligente.
           </p>
         </div>
 
