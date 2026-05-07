@@ -4,13 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"time"
-
-	"golang.org/x/sys/windows/registry"
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/host"
@@ -18,8 +15,11 @@ import (
 )
 
 type Config struct {
-	DeviceID string `json:"device_id"`
-	APIKey   string `json:"api_key"`
+	Endpoint        string `json:"endpoint"`
+	TenantSlug      string `json:"tenant_slug"`
+	DeviceID        string `json:"device_id"`
+	APIKey          string `json:"api_key"`
+	IntervalMinutes int    `json:"interval_minutes"`
 }
 
 type Software struct {
@@ -29,15 +29,16 @@ type Software struct {
 }
 
 type Payload struct {
-	DeviceID string     `json:"device_id"`
-	APIKey   string     `json:"api_key"`
-	Hostname string     `json:"hostname"`
-	OS       string     `json:"os"`
-	Platform string     `json:"platform"`
-	CPU      string     `json:"cpu"`
-	RAM      uint64     `json:"ram"`
-	IP       string     `json:"ip"`
-	Softwares []Software `json:"softwares"`
+	TenantSlug string     `json:"tenant_slug"`
+	DeviceID   string     `json:"device_id"`
+	APIKey     string     `json:"api_key"`
+	Hostname   string     `json:"hostname"`
+	OS         string     `json:"os"`
+	Platform   string     `json:"platform"`
+	CPU        string     `json:"cpu"`
+	RAM        uint64     `json:"ram"`
+	IP         string     `json:"ip"`
+	Softwares  []Software `json:"softwares"`
 }
 
 func loadConfig() (*Config, error) {
@@ -47,10 +48,19 @@ func loadConfig() (*Config, error) {
 	}
 	defer file.Close()
 
-	bytes, _ := ioutil.ReadAll(file)
+	bytes, err := os.ReadFile(file.Name())
+	if err != nil {
+		return nil, err
+	}
 
 	var config Config
-	json.Unmarshal(bytes, &config)
+	if err := json.Unmarshal(bytes, &config); err != nil {
+		return nil, err
+	}
+
+	if config.IntervalMinutes <= 0 {
+		config.IntervalMinutes = 10
+	}
 
 	return &config, nil
 }
@@ -58,62 +68,11 @@ func loadConfig() (*Config, error) {
 func getIP() string {
 	addrs, _ := net.InterfaceAddrs()
 	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() && ipnet.IP.To4() != nil {
 			return ipnet.IP.String()
 		}
 	}
 	return ""
-}
-
-func getSoftwares(path string) []Software {
-	var softwares []Software
-
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, path, registry.READ)
-	if err != nil {
-		return softwares
-	}
-	defer k.Close()
-
-	subKeys, _ := k.ReadSubKeyNames(-1)
-
-	for _, subKey := range subKeys {
-		sk, err := registry.OpenKey(k, subKey, registry.READ)
-		if err != nil {
-			continue
-		}
-
-		name, _, _ := sk.GetStringValue("DisplayName")
-		version, _, _ := sk.GetStringValue("DisplayVersion")
-		publisher, _, _ := sk.GetStringValue("Publisher")
-
-		if name != "" {
-			softwares = append(softwares, Software{
-				Name:      name,
-				Version:   version,
-				Publisher: publisher,
-			})
-		}
-
-		sk.Close()
-	}
-
-	return softwares
-}
-
-func collectSoftwares() []Software {
-	paths := []string{
-		`SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall`,
-		`SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall`,
-	}
-
-	var all []Software
-
-	for _, p := range paths {
-		list := getSoftwares(p)
-		all = append(all, list...)
-	}
-
-	return all
 }
 
 func collectSystem() (string, string, string, string, uint64) {
@@ -121,13 +80,18 @@ func collectSystem() (string, string, string, string, uint64) {
 	c, _ := cpu.Info()
 	m, _ := mem.VirtualMemory()
 
-	return h.Hostname, h.OS, h.Platform, c[0].ModelName, m.Total
+	cpuName := ""
+	if len(c) > 0 {
+		cpuName = c[0].ModelName
+	}
+
+	return h.Hostname, h.OS, h.Platform, cpuName, m.Total
 }
 
-func send(data *Payload) {
+func send(endpoint string, data *Payload) {
 	jsonData, _ := json.Marshal(data)
 
-	req, _ := http.NewRequest("POST", "https://SUA-API.com/api/agent/checkin", bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -151,25 +115,31 @@ func main() {
 		return
 	}
 
+	if config.Endpoint == "" || config.TenantSlug == "" || config.DeviceID == "" || config.APIKey == "" {
+		fmt.Println("config.json precisa de endpoint, tenant_slug, device_id e api_key")
+		return
+	}
+
 	for {
 		hostname, osys, platform, cpuName, ram := collectSystem()
 		ip := getIP()
 		softwares := collectSoftwares()
 
 		payload := &Payload{
-			DeviceID: config.DeviceID,
-			APIKey:   config.APIKey,
-			Hostname: hostname,
-			OS:       osys,
-			Platform: platform,
-			CPU:      cpuName,
-			RAM:      ram,
-			IP:       ip,
-			Softwares: softwares,
+			TenantSlug: config.TenantSlug,
+			DeviceID:   config.DeviceID,
+			APIKey:     config.APIKey,
+			Hostname:   hostname,
+			OS:         osys,
+			Platform:   platform,
+			CPU:        cpuName,
+			RAM:        ram,
+			IP:         ip,
+			Softwares:  softwares,
 		}
 
-		send(payload)
+		send(config.Endpoint, payload)
 
-		time.Sleep(10 * time.Minute)
+		time.Sleep(time.Duration(config.IntervalMinutes) * time.Minute)
 	}
 }

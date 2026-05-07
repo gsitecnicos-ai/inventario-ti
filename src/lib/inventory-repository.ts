@@ -22,6 +22,7 @@ type TenantRow = {
   name: string;
   segment: string;
   compliance: number;
+  logo_url: string | null;
 };
 
 type AssetRow = {
@@ -99,10 +100,10 @@ export async function getInventoryDashboard(
   }
 
   const [tenantsResult, assetsResult, activitiesResult] = await Promise.all([
-    supabase
-      .from("tenants")
-      .select("id, slug, name, segment, compliance")
-      .order("name"),
+      supabase
+        .from("tenants")
+        .select("id, slug, name, segment, compliance, logo_url")
+        .order("name"),
     assetsQuery,
     supabase
       .from("activities")
@@ -140,6 +141,7 @@ export async function getInventoryDashboard(
     id: tenant.id,
     name: tenant.name,
     segment: tenant.segment,
+    logoUrl: tenant.logo_url,
     units: summaries.get(tenant.id)?.units ?? 0,
     assets: summaries.get(tenant.id)?.assets ?? 0,
     pending: summaries.get(tenant.id)?.pending ?? 0,

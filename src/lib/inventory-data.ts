@@ -15,6 +15,7 @@ export type Tenant = {
   id: string;
   name: string;
   segment: string;
+  logoUrl?: string | null;
   units: number;
   assets: number;
   pending: number;

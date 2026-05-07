@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import {
   addGlobalAdmin,
@@ -93,7 +94,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
         <FeedbackMessage success={params.success} error={params.error} />
 
-        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[0.8fr_1.4fr_0.9fr_0.9fr]">
           <CreateManagedUserForm />
           <CreateTenantForm />
           <AddTenantMemberForm tenants={tenants} />
@@ -104,6 +105,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <TenantMembersTable members={members} tenantsById={tenantsById} />
           <GlobalAdminsTable admins={globalAdmins} currentUserId={access.user.id} />
         </section>
+
+        <TenantsTable tenants={tenants} />
 
         <UsersTable users={users} />
       </section>
@@ -134,11 +137,24 @@ function CreateManagedUserForm() {
 function CreateTenantForm() {
   return (
     <form action={createTenant} className="rounded-lg border border-zinc-200 bg-white p-5">
-      <h2 className="text-lg font-semibold">Novo tenant</h2>
-      <div className="mt-4 grid gap-3">
+      <h2 className="text-lg font-semibold">Nova empresa</h2>
+      <p className="mt-1 text-sm text-zinc-500">
+        Dados cadastrais, marca e chave usada pelo agente de inventario.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <TextInput name="name" label="Nome" required />
         <TextInput name="slug" label="Slug" />
+        <TextInput name="cnpj" label="CNPJ" />
         <TextInput name="segment" label="Segmento" required />
+        <TextInput name="contactName" label="Contato" />
+        <TextInput name="contactEmail" label="E-mail do contato" type="email" />
+        <TextInput name="contactPhone" label="Telefone" />
+        <TextInput name="logoUrl" label="URL da logo" />
+        <TextInput name="addressLine" label="Endereco" />
+        <TextInput name="city" label="Cidade" />
+        <TextInput name="state" label="UF" />
+        <TextInput name="postalCode" label="CEP" />
+        <TextInput name="agentApiKey" label="Chave do agente" />
         <label className="grid gap-1.5 text-sm font-medium text-zinc-700">
           Conformidade inicial
           <input
@@ -151,9 +167,9 @@ function CreateTenantForm() {
           />
         </label>
         <SubmitButton
-          label="Criar tenant"
+          label="Criar empresa"
           pendingLabel="Criando..."
-          className="h-11 rounded-md bg-zinc-950 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+          className="h-11 rounded-md bg-zinc-950 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:col-span-2"
         />
       </div>
     </form>
@@ -332,6 +348,96 @@ function GlobalAdminsTable({ admins, currentUserId }: GlobalAdminsTableProps) {
             Nenhum admin global encontrado.
           </p>
         )}
+      </div>
+    </section>
+  );
+}
+
+function TenantsTable({ tenants }: { tenants: AdminTenant[] }) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="border-b border-zinc-200 px-5 py-4">
+        <h2 className="text-lg font-semibold">Empresas cadastradas</h2>
+        <p className="text-sm text-zinc-500">
+          Cadastro base para inventario, usuarios e agente automatico.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1040px] text-left text-sm">
+          <thead className="bg-zinc-100 text-xs uppercase text-zinc-500">
+            <tr>
+              <th className="px-5 py-3 font-semibold">Empresa</th>
+              <th className="px-5 py-3 font-semibold">CNPJ</th>
+              <th className="px-5 py-3 font-semibold">Contato</th>
+              <th className="px-5 py-3 font-semibold">Endereco</th>
+              <th className="px-5 py-3 font-semibold">Agente</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-200">
+            {tenants.length > 0 ? (
+              tenants.map((tenant) => (
+                <tr key={tenant.id}>
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      {tenant.logoUrl ? (
+                        <Image
+                          src={tenant.logoUrl}
+                          alt=""
+                          width={40}
+                          height={40}
+                          unoptimized
+                          className="size-10 rounded-md border border-zinc-200 object-contain"
+                        />
+                      ) : (
+                        <div className="grid size-10 place-items-center rounded-md bg-zinc-100 text-sm font-semibold text-zinc-600">
+                          {tenant.name.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-medium text-zinc-950">
+                          {tenant.name}
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          {tenant.segment}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 text-zinc-600">
+                    {tenant.cnpj ?? "-"}
+                  </td>
+                  <td className="px-5 py-4 text-zinc-600">
+                    <p>{tenant.contactName ?? "-"}</p>
+                    <p className="text-xs">
+                      {tenant.contactEmail ?? tenant.contactPhone ?? ""}
+                    </p>
+                  </td>
+                  <td className="px-5 py-4 text-zinc-600">
+                    {[
+                      tenant.addressLine,
+                      tenant.city,
+                      tenant.state,
+                      tenant.postalCode,
+                    ]
+                      .filter(Boolean)
+                      .join(" - ") || "-"}
+                  </td>
+                  <td className="px-5 py-4">
+                    <span className="rounded-md bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+                      {tenant.hasAgentApiKey ? "Configurado" : "Pendente"}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="px-5 py-8 text-center text-zinc-500">
+                  Nenhuma empresa cadastrada.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </section>
   );

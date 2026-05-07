@@ -14,7 +14,8 @@ export function AssetForm({ tenants, disabled = false }: AssetFormProps) {
       <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold text-zinc-950">Cadastrar ativo</h2>
         <p className="text-sm text-zinc-500">
-          Registre patrimonio, responsavel, localizacao e criticidade.
+          Registre computadores, servidores e ativos de rede como switches e
+          roteadores quando a coleta automatica nao for possivel.
         </p>
       </div>
 

@@ -12,6 +12,16 @@ export type AdminTenant = {
   name: string;
   segment: string;
   compliance: number;
+  cnpj: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  addressLine: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  logoUrl: string | null;
+  hasAgentApiKey: boolean;
 };
 
 export type AdminTenantMember = {
@@ -59,7 +69,9 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
     await Promise.all([
       supabase
         .from("tenants")
-        .select("id, slug, name, segment, compliance")
+        .select(
+          "id, slug, name, segment, compliance, cnpj, contact_name, contact_email, contact_phone, address_line, city, state, postal_code, logo_url, agent_api_key",
+        )
         .order("name"),
       supabase
         .from("tenant_members")
@@ -96,7 +108,23 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
   );
 
   return {
-    tenants: tenantsResult.data,
+    tenants: tenantsResult.data.map((tenant) => ({
+      id: tenant.id,
+      slug: tenant.slug,
+      name: tenant.name,
+      segment: tenant.segment,
+      compliance: tenant.compliance,
+      cnpj: tenant.cnpj,
+      contactName: tenant.contact_name,
+      contactEmail: tenant.contact_email,
+      contactPhone: tenant.contact_phone,
+      addressLine: tenant.address_line,
+      city: tenant.city,
+      state: tenant.state,
+      postalCode: tenant.postal_code,
+      logoUrl: tenant.logo_url,
+      hasAgentApiKey: Boolean(tenant.agent_api_key),
+    })),
     users: usersResult.data.users.map((user) => ({
       id: user.id,
       email: user.email ?? "sem-email",

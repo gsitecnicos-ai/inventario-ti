@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { signIn, signUp } from "@/app/actions";
+import { signIn } from "@/app/actions";
 import { FeedbackMessage } from "@/components/feedback-message";
 import { SubmitButton } from "@/components/form-buttons";
 import { getCurrentAccess } from "@/lib/supabase-server";
@@ -21,18 +21,27 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <main className="min-h-screen bg-zinc-50 px-6 py-10 text-zinc-950">
-      <section className="mx-auto grid w-full max-w-5xl gap-6 lg:grid-cols-2">
+      <section className="mx-auto grid min-h-[calc(100vh-5rem)] w-full max-w-5xl items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="flex flex-col justify-center">
-          <p className="text-sm font-medium uppercase text-teal-700">
-            Inventario TI
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">
-            Acesse para operar ativos por tenant
+          <div className="flex items-center gap-4">
+            <div className="grid size-16 place-items-center rounded-md bg-zinc-950 text-2xl font-semibold tracking-normal text-white">
+              GSI
+            </div>
+            <div>
+              <p className="text-xl font-semibold text-zinc-950">
+                Soluções Inteligentes
+              </p>
+              <p className="mt-1 text-sm font-medium uppercase text-teal-700">
+                Inventários
+              </p>
+            </div>
+          </div>
+          <h1 className="mt-8 max-w-xl text-3xl font-semibold sm:text-4xl">
+            Controle de ativos por empresa com acesso segregado
           </h1>
           <p className="mt-4 max-w-xl text-base leading-7 text-zinc-600">
-            A sessao Supabase ativa as policies RLS para leitura e gravacao dos
-            dados permitidos ao usuario. Se a sessao ja existir, voce sera
-            direcionado automaticamente para a area correta.
+            Entre com uma conta criada pelo administrador global. Cada usuario
+            acessa somente a empresa vinculada ao seu perfil.
           </p>
         </div>
 
@@ -42,13 +51,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             title="Entrar"
             action={signIn}
             buttonLabel="Entrar"
-            helper="Use um usuario ja criado no Supabase Auth."
-          />
-          <AuthForm
-            title="Criar conta"
-            action={signUp}
-            buttonLabel="Cadastrar"
-            helper="A conta ainda precisa ser vinculada a um tenant."
+            helper="Sem cadastro publico. Solicite o acesso ao administrador do sistema."
           />
         </div>
       </section>

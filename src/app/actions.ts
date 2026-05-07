@@ -38,6 +38,18 @@ function readRequiredString(formData: FormData, key: string) {
   return value.trim();
 }
 
+function readOptionalString(formData: FormData, key: string) {
+  const value = formData.get(key);
+
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed === "" ? null : trimmed;
+}
+
 function readAssetStatus(formData: FormData) {
   const status = readRequiredString(formData, "status") as AssetStatus;
 
@@ -170,33 +182,6 @@ export async function signIn(formData: FormData) {
 
   revalidatePath(redirectPath);
   redirectWithMessage(redirectPath, "success", "Login realizado.");
-}
-
-export async function signUp(formData: FormData) {
-  try {
-    const supabase = await createAuthenticatedSupabaseClient();
-
-    if (!supabase) {
-      throw new Error("Supabase nao configurado.");
-    }
-
-    const email = readRequiredString(formData, "email");
-    const password = readRequiredString(formData, "password");
-    const { error } = await supabase.auth.signUp({ email, password });
-
-    if (error) {
-      throw new Error(error.message);
-    }
-  } catch (error) {
-    redirectWithMessage("/login", "error", getErrorMessage(error));
-  }
-
-  revalidatePath("/login");
-  redirectWithMessage(
-    "/login",
-    "success",
-    "Conta criada. Vincule o usuario a um tenant antes de operar.",
-  );
 }
 
 export async function signOut() {
@@ -341,6 +326,7 @@ export async function createTenant(formData: FormData) {
     const supabase = await getSupabaseForGlobalAdmin();
     const name = readRequiredString(formData, "name");
     const segment = readRequiredString(formData, "segment");
+    const agentApiKey = readOptionalString(formData, "agentApiKey");
     const providedSlug = formData.get("slug");
     const slug =
       typeof providedSlug === "string" && providedSlug.trim()
@@ -360,6 +346,16 @@ export async function createTenant(formData: FormData) {
       slug,
       segment,
       compliance,
+      cnpj: readOptionalString(formData, "cnpj"),
+      contact_name: readOptionalString(formData, "contactName"),
+      contact_email: readOptionalString(formData, "contactEmail"),
+      contact_phone: readOptionalString(formData, "contactPhone"),
+      address_line: readOptionalString(formData, "addressLine"),
+      city: readOptionalString(formData, "city"),
+      state: readOptionalString(formData, "state"),
+      postal_code: readOptionalString(formData, "postalCode"),
+      logo_url: readOptionalString(formData, "logoUrl"),
+      agent_api_key: agentApiKey,
     });
 
     if (error) {
