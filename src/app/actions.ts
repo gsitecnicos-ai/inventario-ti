@@ -444,6 +444,24 @@ export async function createTenant(formData: FormData) {
   redirectWithMessage("/admin/users", "success", "Tenant criado.");
 }
 
+export async function deleteTenant(formData: FormData) {
+  try {
+    const supabase = await getSupabaseForGlobalAdmin();
+    const tenantId = readRequiredString(formData, "tenantId");
+    const { error } = await supabase.from("tenants").delete().eq("id", tenantId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Empresa excluida.");
+}
+
 export async function createManagedUser(formData: FormData) {
   try {
     const supabase = await getSupabaseForGlobalAdmin();

@@ -6,6 +6,7 @@ import {
   createManagedUser,
   createTenant,
   createTenantUser,
+  deleteTenant,
   generateTenantAgentKey,
   removeGlobalAdmin,
   removeTenantMember,
@@ -174,7 +175,6 @@ function CreateTenantForm() {
   return (
     <form
       action={createTenant}
-      encType="multipart/form-data"
       className="rounded-lg border border-zinc-200 bg-white p-5"
     >
       <h2 className="text-lg font-semibold">Nova empresa</h2>
@@ -527,6 +527,7 @@ function TenantsTable({ tenants }: { tenants: AdminTenant[] }) {
               <th className="px-5 py-3 font-semibold">Contato</th>
               <th className="px-5 py-3 font-semibold">Endereco</th>
               <th className="px-5 py-3 font-semibold">Agente</th>
+              <th className="px-5 py-3 font-semibold">Acoes</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-200">
@@ -602,11 +603,22 @@ function TenantsTable({ tenants }: { tenants: AdminTenant[] }) {
                       )}
                     </div>
                   </td>
+                  <td className="px-5 py-4">
+                    <form action={deleteTenant}>
+                      <input type="hidden" name="tenantId" value={tenant.id} />
+                      <ConfirmSubmitButton
+                        label="Excluir"
+                        pendingLabel="Excluindo..."
+                        confirmMessage={`Excluir a empresa ${tenant.name}? Esta acao tambem remove vinculos, ativos e eventos associados.`}
+                        className="h-8 rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-50"
+                      />
+                    </form>
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-zinc-500">
+                <td colSpan={6} className="px-5 py-8 text-center text-zinc-500">
                   Nenhuma empresa cadastrada.
                 </td>
               </tr>
