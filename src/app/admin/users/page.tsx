@@ -6,6 +6,7 @@ import {
   createManagedUser,
   createTenant,
   createTenantUser,
+  generateTenantAgentKey,
   removeGlobalAdmin,
   removeTenantMember,
   signOut,
@@ -578,9 +579,28 @@ function TenantsTable({ tenants }: { tenants: AdminTenant[] }) {
                       .join(" - ") || "-"}
                   </td>
                   <td className="px-5 py-4">
-                    <span className="rounded-md bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
-                      {tenant.hasAgentApiKey ? "Configurado" : "Pendente"}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+                        {tenant.hasAgentApiKey ? "Configurado" : "Pendente"}
+                      </span>
+                      {tenant.hasAgentApiKey ? (
+                        <a
+                          href={`/api/admin/agent-config/${tenant.id}`}
+                          className="inline-flex h-8 items-center rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
+                        >
+                          Baixar config
+                        </a>
+                      ) : (
+                        <form action={generateTenantAgentKey}>
+                          <input type="hidden" name="tenantId" value={tenant.id} />
+                          <SubmitButton
+                            label="Gerar chave"
+                            pendingLabel="Gerando..."
+                            className="h-8 rounded-md bg-zinc-950 px-3 text-xs font-medium text-white transition-colors hover:bg-zinc-800"
+                          />
+                        </form>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))

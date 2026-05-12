@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
@@ -15,6 +16,10 @@ import {
   type AssetStatus,
 } from "@/lib/inventory-data";
 import { tenantRoles, type TenantRole } from "@/lib/admin-repository";
+
+function createAgentApiKey() {
+  return `agt_${randomUUID().replaceAll("-", "")}`;
+}
 
 function redirectWithMessage(
   path: string,
@@ -377,7 +382,8 @@ export async function createTenant(formData: FormData) {
     const supabase = await getSupabaseForGlobalAdmin();
     const name = readRequiredString(formData, "name");
     const segment = readRequiredString(formData, "segment");
-    const agentApiKey = readOptionalString(formData, "agentApiKey");
+    const agentApiKey =
+      readOptionalString(formData, "agentApiKey") ?? createAgentApiKey();
     const logoUrl = await readOptionalImageDataUrl(formData, "logoFile");
     const providedSlug = formData.get("slug");
     const slug =
@@ -463,6 +469,32 @@ export async function createManagedUser(formData: FormData) {
 
   revalidatePath("/admin/users");
   redirectWithMessage("/admin/users", "success", "Usuario criado.");
+}
+
+export async function generateTenantAgentKey(formData: FormData) {
+  try {
+    const supabase = await getSupabaseForGlobalAdmin();
+    const tenantId = readRequiredString(formData, "tenantId");
+    const { error } = await supabase
+      .from("tenants")
+      .update({ agent_api_key: createAgentApiKey() } as never)
+      .eq("id", tenantId);
+
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        throw new Error(
+          "A coluna agent_api_key ainda nao existe. Rode a migration 004_repair_admin_schema.sql no Supabase.",
+        );
+      }
+
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
+  }
+
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Chave do agente gerada.");
 }
 
 export async function addTenantMember(formData: FormData) {

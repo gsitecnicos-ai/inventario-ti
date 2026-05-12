@@ -18,11 +18,11 @@ export type AssetFilters = {
 
 type TenantRow = {
   id: string;
-  slug: string;
+  slug?: string | null;
   name: string;
-  segment: string;
-  compliance: number;
-  logo_url: string | null;
+  segment?: string | null;
+  compliance?: number | null;
+  logo_url?: string | null;
 };
 
 type AssetRow = {
@@ -99,56 +99,101 @@ export async function getInventoryDashboard(
     );
   }
 
-  const [tenantsResult, assetsResult, activitiesResult] = await Promise.all([
-      supabase
+  const tenantsResult = await supabase
+    .from("tenants")
+    .select("id, slug, name, segment, compliance, logo_url")
+    .order("name");
+  const fallbackTenantsResult = isMissingSchemaError(tenantsResult.error)
+    ? await supabase
         .from("tenants")
-        .select("id, slug, name, segment, compliance, logo_url")
-        .order("name"),
+        .select("id, name, segment, compliance")
+        .order("name")
+    : null;
+  const minimalTenantsResult = isMissingSchemaError(fallbackTenantsResult?.error)
+    ? await supabase.from("tenants").select("id, name").order("name")
+    : null;
+
+  const [assetsResult, activitiesResult, summariesResult] = await Promise.all([
     assetsQuery,
     supabase
       .from("activities")
       .select("id, tenant_id, title, description, occurred_at")
       .order("occurred_at", { ascending: false })
       .limit(10),
+    supabase.rpc("get_tenant_summaries"),
   ]);
 
-  const summariesResult = await supabase.rpc("get_tenant_summaries");
-
   if (
-    tenantsResult.error ||
-    assetsResult.error ||
-    activitiesResult.error ||
-    summariesResult.error
+    tenantsResult.error &&
+    !fallbackTenantsResult &&
+    !minimalTenantsResult
   ) {
     console.error("Supabase inventory query failed", {
       tenants: tenantsResult.error,
-      assets: assetsResult.error,
-      activities: activitiesResult.error,
-      summaries: summariesResult.error,
     });
 
-    return getMockDashboard(filters);
+    return {
+      tenants: [],
+      assets: [],
+      activities: [],
+      source: "supabase",
+    };
+  }
+
+  if (fallbackTenantsResult?.error && !minimalTenantsResult) {
+    console.error("Supabase tenants fallback query failed", {
+      tenants: fallbackTenantsResult.error,
+    });
+  }
+
+  if (minimalTenantsResult?.error) {
+    console.error("Supabase tenants minimal query failed", {
+      tenants: minimalTenantsResult.error,
+    });
   }
 
   const summaries = new Map(
-    (summariesResult.data as TenantSummaryRow[]).map((summary) => [
+    ((summariesResult.error ? [] : summariesResult.data) as TenantSummaryRow[]).map((summary) => [
       summary.tenant_id,
       summary,
     ]),
   );
 
-  const tenants = (tenantsResult.data as TenantRow[]).map((tenant) => ({
+  const tenantRows = (minimalTenantsResult?.data ??
+    fallbackTenantsResult?.data ??
+    tenantsResult.data ??
+    []) as TenantRow[];
+  const assetRows = (isMissingSchemaError(assetsResult.error)
+    ? []
+    : (assetsResult.data ?? [])) as AssetRow[];
+  const activityRows = (isMissingSchemaError(activitiesResult.error)
+    ? []
+    : (activitiesResult.data ?? [])) as ActivityRow[];
+
+  if (assetsResult.error && !isMissingSchemaError(assetsResult.error)) {
+    console.error("Supabase assets query failed", assetsResult.error);
+  }
+
+  if (activitiesResult.error && !isMissingSchemaError(activitiesResult.error)) {
+    console.error("Supabase activities query failed", activitiesResult.error);
+  }
+
+  if (summariesResult.error && !isMissingSchemaError(summariesResult.error)) {
+    console.error("Supabase tenant summaries query failed", summariesResult.error);
+  }
+
+  const tenants = tenantRows.map((tenant) => ({
     id: tenant.id,
     name: tenant.name,
-    segment: tenant.segment,
-    logoUrl: tenant.logo_url,
+    segment: tenant.segment ?? "Sem segmento",
+    logoUrl: tenant.logo_url ?? null,
     units: summaries.get(tenant.id)?.units ?? 0,
     assets: summaries.get(tenant.id)?.assets ?? 0,
     pending: summaries.get(tenant.id)?.pending ?? 0,
-    compliance: tenant.compliance,
+    compliance: tenant.compliance ?? 0,
   }));
 
-  const assets = (assetsResult.data as AssetRow[]).map((asset) => ({
+  const assets = assetRows.map((asset) => ({
     id: asset.id,
     tag: asset.tag,
     tenantId: asset.tenant_id,
@@ -162,7 +207,7 @@ export async function getInventoryDashboard(
     updatedAt: formatDate(asset.updated_at),
   }));
 
-  const activities = (activitiesResult.data as ActivityRow[]).map(
+  const activities = activityRows.map(
     (activity) => ({
       id: activity.id,
       tenantId: activity.tenant_id,
@@ -178,6 +223,14 @@ export async function getInventoryDashboard(
     activities,
     source: "supabase",
   };
+}
+
+function isMissingSchemaError(error: { message: string } | null | undefined) {
+  return Boolean(
+    error?.message.includes("does not exist") ||
+      error?.message.includes("Could not find") ||
+      error?.message.includes("schema cache"),
+  );
 }
 
 function getMockDashboard(filters: AssetFilters = {}): InventoryDashboardData {

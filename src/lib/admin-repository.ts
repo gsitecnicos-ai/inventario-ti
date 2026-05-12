@@ -22,6 +22,7 @@ export type AdminTenant = {
   postalCode: string | null;
   logoUrl: string | null;
   hasAgentApiKey: boolean;
+  agentApiKey: string | null;
 };
 
 export type AdminTenantMember = {
@@ -198,6 +199,7 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
       postalCode: tenant.postal_code,
       logoUrl: tenant.logo_url,
       hasAgentApiKey: Boolean(tenant.agent_api_key),
+      agentApiKey: tenant.agent_api_key,
     })),
     users: usersResult.data.users.map((user) => ({
       id: user.id,
