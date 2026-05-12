@@ -585,12 +585,26 @@ function TenantsTable({ tenants }: { tenants: AdminTenant[] }) {
                         {tenant.hasAgentApiKey ? "Configurado" : "Pendente"}
                       </span>
                       {tenant.hasAgentApiKey ? (
-                        <a
-                          href={`/api/admin/agent-config/${tenant.id}`}
-                          className="inline-flex h-8 items-center rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
-                        >
-                          Baixar config
-                        </a>
+                        <>
+                          <a
+                            href={`/api/admin/agent-installer/${tenant.id}`}
+                            className="inline-flex h-8 items-center rounded-md bg-zinc-950 px-3 text-xs font-medium text-white transition-colors hover:bg-zinc-800"
+                          >
+                            Baixar instalador
+                          </a>
+                          <a
+                            href={`/api/admin/agent-config/${tenant.id}`}
+                            className="inline-flex h-8 items-center rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
+                          >
+                            Config
+                          </a>
+                          <a
+                            href="/downloads/inventario-ti-agent-windows-amd64.exe"
+                            className="inline-flex h-8 items-center rounded-md border border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
+                          >
+                            Agente
+                          </a>
+                        </>
                       ) : (
                         <form action={generateTenantAgentKey}>
                           <input type="hidden" name="tenantId" value={tenant.id} />
