@@ -28,6 +28,18 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Erro inesperado.";
 }
 
+function isMissingSchemaError(error: { message: string } | null | undefined) {
+  return Boolean(
+    error?.message.includes("does not exist") ||
+      error?.message.includes("Could not find") ||
+      error?.message.includes("schema cache"),
+  );
+}
+
+function getTenantMembersSchemaErrorMessage() {
+  return "O usuario foi salvo no login, mas a tabela tenant_members ainda nao esta pronta no Supabase. Rode supabase/migrations/004_repair_admin_schema.sql no SQL Editor para habilitar permissoes por empresa.";
+}
+
 function readRequiredString(formData: FormData, key: string) {
   const value = formData.get(key);
 
@@ -48,6 +60,26 @@ function readOptionalString(formData: FormData, key: string) {
   const trimmed = value.trim();
 
   return trimmed === "" ? null : trimmed;
+}
+
+async function readOptionalImageDataUrl(formData: FormData, key: string) {
+  const value = formData.get(key);
+
+  if (!(value instanceof File) || value.size === 0) {
+    return null;
+  }
+
+  if (!value.type.startsWith("image/")) {
+    throw new Error("A logo precisa ser um arquivo de imagem.");
+  }
+
+  if (value.size > 500 * 1024) {
+    throw new Error("A logo precisa ter no maximo 500 KB.");
+  }
+
+  const buffer = Buffer.from(await value.arrayBuffer());
+
+  return `data:${value.type};base64,${buffer.toString("base64")}`;
 }
 
 function readAssetStatus(formData: FormData) {
@@ -132,6 +164,25 @@ async function getUserIdByEmail(email: string) {
   }
 
   return user.id;
+}
+
+async function findUserIdByEmail(email: string) {
+  const supabase = await getSupabaseForGlobalAdmin();
+  const normalizedEmail = email.trim().toLowerCase();
+  const { data, error } = await supabase.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (
+    data.users.find(
+      (authUser) => authUser.email?.toLowerCase() === normalizedEmail,
+    )?.id ?? null
+  );
 }
 
 async function getSupabaseForMutation() {
@@ -327,6 +378,7 @@ export async function createTenant(formData: FormData) {
     const name = readRequiredString(formData, "name");
     const segment = readRequiredString(formData, "segment");
     const agentApiKey = readOptionalString(formData, "agentApiKey");
+    const logoUrl = await readOptionalImageDataUrl(formData, "logoFile");
     const providedSlug = formData.get("slug");
     const slug =
       typeof providedSlug === "string" && providedSlug.trim()
@@ -354,11 +406,27 @@ export async function createTenant(formData: FormData) {
       city: readOptionalString(formData, "city"),
       state: readOptionalString(formData, "state"),
       postal_code: readOptionalString(formData, "postalCode"),
-      logo_url: readOptionalString(formData, "logoUrl"),
+      logo_url: logoUrl,
       agent_api_key: agentApiKey,
     });
 
-    if (error) {
+    if (isMissingSchemaError(error)) {
+      const { error: fallbackError } = await supabase
+        .from("tenants")
+        .insert({ name, segment, compliance } as never);
+
+      if (isMissingSchemaError(fallbackError)) {
+        const { error: minimalError } = await supabase
+          .from("tenants")
+          .insert({ name } as never);
+
+        if (minimalError) {
+          throw new Error(minimalError.message);
+        }
+      } else if (fallbackError) {
+        throw new Error(fallbackError.message);
+      }
+    } else if (error) {
       throw new Error(error.message);
     }
   } catch (error) {
@@ -412,6 +480,10 @@ export async function addTenantMember(formData: FormData) {
     });
 
     if (error) {
+      if (isMissingSchemaError(error)) {
+        throw new Error(getTenantMembersSchemaErrorMessage());
+      }
+
       throw new Error(error.message);
     }
   } catch (error) {
@@ -421,6 +493,67 @@ export async function addTenantMember(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/admin/users");
   redirectWithMessage("/admin/users", "success", "Usuario vinculado ao tenant.");
+}
+
+export async function createTenantUser(formData: FormData) {
+  try {
+    const supabase = await getSupabaseForGlobalAdmin();
+    const tenantId = readRequiredString(formData, "tenantId");
+    const email = readRequiredString(formData, "email").toLowerCase();
+    const password = readOptionalString(formData, "password");
+    const role = readTenantRole(formData);
+    let userId = await findUserIdByEmail(email);
+
+    if (password && password.length < 6) {
+      throw new Error("A senha precisa ter pelo menos 6 caracteres.");
+    }
+
+    if (!userId) {
+      if (!password) {
+        throw new Error("Informe uma senha temporaria para novo usuario.");
+      }
+
+      const { data, error } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      userId = data.user.id;
+    } else if (password) {
+      const { error } = await supabase.auth.admin.updateUserById(userId, {
+        password,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    }
+
+    const { error } = await supabase.from("tenant_members").upsert({
+      tenant_id: tenantId,
+      user_id: userId,
+      role,
+    });
+
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        throw new Error(getTenantMembersSchemaErrorMessage());
+      }
+
+      throw new Error(error.message);
+    }
+  } catch (error) {
+    redirectWithMessage("/admin/users", "error", getErrorMessage(error));
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/admin/users");
+  redirectWithMessage("/admin/users", "success", "Usuario salvo na empresa.");
 }
 
 export async function updateTenantMemberRole(formData: FormData) {

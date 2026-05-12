@@ -3,9 +3,9 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import {
   addGlobalAdmin,
-  addTenantMember,
   createManagedUser,
   createTenant,
+  createTenantUser,
   removeGlobalAdmin,
   removeTenantMember,
   signOut,
@@ -65,13 +65,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
         <header className="flex flex-col gap-4 border-b border-zinc-200 pb-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-medium uppercase text-teal-700">
-              Administracao global
+              Painel administrativo
             </p>
             <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">
-              Tenants, usuarios e permissoes
+              Empresas, usuarios e permissoes
             </h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-zinc-600">
-              Gerencie acesso por cliente e administradores globais do sistema.
+              Crie empresas, cadastre usuarios e defina quem pode visualizar,
+              operar ou administrar o inventario de cada cliente.
             </p>
           </div>
 
@@ -94,10 +95,28 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
         <FeedbackMessage success={params.success} error={params.error} />
 
-        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[0.8fr_1.4fr_0.9fr_0.9fr]">
-          <CreateManagedUserForm />
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <AdminMetric label="Empresas" value={tenants.length} detail="clientes cadastrados" />
+          <AdminMetric label="Usuarios" value={users.length} detail="contas com login" />
+          <AdminMetric label="Vinculos" value={members.length} detail="permissoes por empresa" />
+          <AdminMetric label="Admins globais" value={globalAdmins.length} detail="acesso total" />
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <CreateTenantForm />
-          <AddTenantMemberForm tenants={tenants} />
+          <CreateTenantUserForm tenants={tenants} />
+        </section>
+
+        <CompanyAccessCards
+          tenants={tenants}
+          members={members}
+          users={users}
+        />
+
+        <TenantsTable tenants={tenants} />
+
+        <section className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+          <CreateManagedUserForm />
           <AddGlobalAdminForm />
         </section>
 
@@ -106,11 +125,27 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
           <GlobalAdminsTable admins={globalAdmins} currentUserId={access.user.id} />
         </section>
 
-        <TenantsTable tenants={tenants} />
-
         <UsersTable users={users} />
       </section>
     </main>
+  );
+}
+
+function AdminMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+}) {
+  return (
+    <article className="rounded-lg border border-zinc-200 bg-white p-5">
+      <p className="text-sm text-zinc-500">{label}</p>
+      <p className="mt-2 text-3xl font-semibold">{value}</p>
+      <p className="mt-2 text-sm text-zinc-500">{detail}</p>
+    </article>
   );
 }
 
@@ -136,7 +171,11 @@ function CreateManagedUserForm() {
 
 function CreateTenantForm() {
   return (
-    <form action={createTenant} className="rounded-lg border border-zinc-200 bg-white p-5">
+    <form
+      action={createTenant}
+      encType="multipart/form-data"
+      className="rounded-lg border border-zinc-200 bg-white p-5"
+    >
       <h2 className="text-lg font-semibold">Nova empresa</h2>
       <p className="mt-1 text-sm text-zinc-500">
         Dados cadastrais, marca e chave usada pelo agente de inventario.
@@ -149,7 +188,15 @@ function CreateTenantForm() {
         <TextInput name="contactName" label="Contato" />
         <TextInput name="contactEmail" label="E-mail do contato" type="email" />
         <TextInput name="contactPhone" label="Telefone" />
-        <TextInput name="logoUrl" label="URL da logo" />
+        <label className="grid gap-1.5 text-sm font-medium text-zinc-700">
+          Logo da empresa
+          <input
+            name="logoFile"
+            type="file"
+            accept="image/*"
+            className="h-11 rounded-md border border-zinc-300 px-3 py-2 text-sm font-normal text-zinc-900 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-700"
+          />
+        </label>
         <TextInput name="addressLine" label="Endereco" />
         <TextInput name="city" label="Cidade" />
         <TextInput name="state" label="UF" />
@@ -176,19 +223,22 @@ function CreateTenantForm() {
   );
 }
 
-function AddTenantMemberForm({ tenants }: { tenants: AdminTenant[] }) {
+function CreateTenantUserForm({ tenants }: { tenants: AdminTenant[] }) {
   return (
-    <form action={addTenantMember} className="rounded-lg border border-zinc-200 bg-white p-5">
-      <h2 className="text-lg font-semibold">Vincular usuario</h2>
-      <div className="mt-4 grid gap-3">
-        <label className="grid gap-1.5 text-sm font-medium text-zinc-700">
-          Tenant
+    <form action={createTenantUser} className="rounded-lg border border-zinc-200 bg-white p-5">
+      <h2 className="text-lg font-semibold">Adicionar usuario a empresa</h2>
+      <p className="mt-1 text-sm text-zinc-500">
+        Crie o login se ele ainda nao existir e aplique a permissao no inventario.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-medium text-zinc-700 sm:col-span-2">
+          Empresa
           <select
             name="tenantId"
             required
             className="h-11 rounded-md border border-zinc-300 bg-white px-3 text-sm font-normal text-zinc-900"
           >
-            <option value="">Selecione</option>
+            <option value="">Selecione a empresa</option>
             {tenants.map((tenant) => (
               <option key={tenant.id} value={tenant.id}>
                 {tenant.name}
@@ -197,14 +247,119 @@ function AddTenantMemberForm({ tenants }: { tenants: AdminTenant[] }) {
           </select>
         </label>
         <TextInput name="email" label="E-mail do usuario" type="email" required />
-        <RoleSelect name="role" defaultValue="viewer" />
+        <TextInput name="password" label="Senha temporaria" type="password" />
+        <RoleSelect name="role" defaultValue="operator" />
         <SubmitButton
-          label="Salvar vinculo"
+          label="Salvar usuario e permissao"
           pendingLabel="Salvando..."
-          className="h-11 rounded-md bg-zinc-950 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+          className="h-11 rounded-md bg-zinc-950 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-800 sm:col-span-2"
         />
       </div>
     </form>
+  );
+}
+
+type CompanyAccessCardsProps = {
+  tenants: AdminTenant[];
+  members: Awaited<ReturnType<typeof getAdminDashboard>>["members"];
+  users: Awaited<ReturnType<typeof getAdminDashboard>>["users"];
+};
+
+function CompanyAccessCards({
+  tenants,
+  members,
+  users,
+}: CompanyAccessCardsProps) {
+  const usersById = new Map(users.map((user) => [user.id, user]));
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-2">
+      {tenants.length > 0 ? (
+        tenants.map((tenant) => {
+          const tenantMembers = members.filter(
+            (member) => member.tenantId === tenant.id,
+          );
+
+          return (
+            <article key={tenant.id} className="rounded-lg border border-zinc-200 bg-white p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  {tenant.logoUrl ? (
+                    <Image
+                      src={tenant.logoUrl}
+                      alt=""
+                      width={44}
+                      height={44}
+                      unoptimized
+                      className="size-11 rounded-md border border-zinc-200 object-contain"
+                    />
+                  ) : (
+                    <div className="grid size-11 shrink-0 place-items-center rounded-md bg-zinc-100 text-sm font-semibold text-zinc-600">
+                      {tenant.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-semibold">{tenant.name}</h2>
+                    <p className="text-sm text-zinc-500">{tenant.segment}</p>
+                  </div>
+                </div>
+                <span className="rounded-md bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+                  {tenantMembers.length} usuarios
+                </span>
+              </div>
+
+              <div className="mt-5 grid gap-3">
+                {tenantMembers.length > 0 ? (
+                  tenantMembers.map((member) => (
+                    <div
+                      key={`${member.tenantId}-${member.userId}`}
+                      className="grid gap-3 rounded-md border border-zinc-200 p-3 sm:grid-cols-[1fr_auto]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {member.email}
+                        </p>
+                        <p className="text-xs text-zinc-500">
+                          Ultimo acesso: {formatDate(usersById.get(member.userId)?.lastSignInAt ?? null)}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <form
+                          id={`company-member-${member.tenantId}-${member.userId}`}
+                          action={updateTenantMemberRole}
+                          className="flex gap-2"
+                        >
+                          <input type="hidden" name="tenantId" value={member.tenantId} />
+                          <input type="hidden" name="userId" value={member.userId} />
+                          <RoleSelect
+                            name="role"
+                            defaultValue={member.role}
+                            form={`company-member-${member.tenantId}-${member.userId}`}
+                          />
+                          <SubmitButton
+                            label="Salvar"
+                            pendingLabel="..."
+                            className="h-10 rounded-md bg-zinc-950 px-3 text-xs font-medium text-white"
+                          />
+                        </form>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-md border border-dashed border-zinc-300 px-3 py-4 text-sm text-zinc-500">
+                    Nenhum usuario vinculado a esta empresa.
+                  </p>
+                )}
+              </div>
+            </article>
+          );
+        })
+      ) : (
+        <article className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-sm text-zinc-500 lg:col-span-2">
+          Crie a primeira empresa para liberar o vinculo de usuarios e permissoes.
+        </article>
+      )}
+    </section>
   );
 }
 

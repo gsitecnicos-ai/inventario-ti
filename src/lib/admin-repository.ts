@@ -52,6 +52,14 @@ export type AdminDashboardData = {
   users: AdminUser[];
 };
 
+function isMissingColumnError(error: { message: string } | null | undefined) {
+  return Boolean(error?.message.includes("does not exist"));
+}
+
+function isMissingTableError(error: { message: string } | null | undefined) {
+  return Boolean(error?.message.includes("Could not find the table"));
+}
+
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
   const access = await getCurrentAccess();
 
@@ -83,16 +91,48 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
         .order("created_at", { ascending: false }),
       supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }),
     ]);
+  const membersUnavailable = isMissingTableError(membersResult.error);
+  const fallbackMembersResult =
+    !membersUnavailable && isMissingColumnError(membersResult.error)
+    ? await supabase.from("tenant_members").select("tenant_id, user_id, role")
+    : null;
 
-  if (tenantsResult.error) {
+  const tenantsMissingNewColumns = isMissingColumnError(tenantsResult.error);
+  const fallbackTenantsResult = tenantsMissingNewColumns
+    ? await supabase
+        .from("tenants")
+        .select("id, name, segment, compliance")
+        .order("name")
+    : null;
+  const minimalTenantsResult = isMissingColumnError(fallbackTenantsResult?.error)
+    ? await supabase.from("tenants").select("id, name").order("name")
+    : null;
+
+  if (tenantsResult.error && !fallbackTenantsResult && !minimalTenantsResult) {
     throw new Error(tenantsResult.error.message);
   }
 
-  if (membersResult.error) {
+  if (fallbackTenantsResult?.error && !minimalTenantsResult) {
+    throw new Error(fallbackTenantsResult.error.message);
+  }
+
+  if (minimalTenantsResult?.error) {
+    throw new Error(minimalTenantsResult.error.message);
+  }
+
+  if (membersResult.error && !fallbackMembersResult && !membersUnavailable) {
     throw new Error(membersResult.error.message);
   }
 
-  if (globalAdminsResult.error) {
+  if (fallbackMembersResult?.error) {
+    throw new Error(fallbackMembersResult.error.message);
+  }
+
+  const globalAdminsUnavailable = Boolean(
+    globalAdminsResult.error?.message.includes("global_admins"),
+  );
+
+  if (globalAdminsResult.error && !globalAdminsUnavailable) {
     throw new Error(globalAdminsResult.error.message);
   }
 
@@ -107,8 +147,42 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
     ]),
   );
 
+  const tenantRows = minimalTenantsResult
+    ? (minimalTenantsResult.data ?? []).map((tenant) => ({
+        ...tenant,
+        slug: tenant.id,
+        segment: "Sem segmento",
+        compliance: 0,
+        cnpj: null,
+        contact_name: null,
+        contact_email: null,
+        contact_phone: null,
+        address_line: null,
+        city: null,
+        state: null,
+        postal_code: null,
+        logo_url: null,
+        agent_api_key: null,
+      }))
+    : tenantsMissingNewColumns
+      ? (fallbackTenantsResult?.data ?? []).map((tenant) => ({
+        ...tenant,
+        slug: tenant.id,
+        cnpj: null,
+        contact_name: null,
+        contact_email: null,
+        contact_phone: null,
+        address_line: null,
+        city: null,
+        state: null,
+        postal_code: null,
+        logo_url: null,
+        agent_api_key: null,
+      }))
+      : (tenantsResult.data ?? []);
+
   return {
-    tenants: tenantsResult.data.map((tenant) => ({
+    tenants: tenantRows.map((tenant) => ({
       id: tenant.id,
       slug: tenant.slug,
       name: tenant.name,
@@ -131,17 +205,32 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
       createdAt: user.created_at,
       lastSignInAt: user.last_sign_in_at ?? null,
     })),
-    members: membersResult.data.map((member) => ({
-      tenantId: member.tenant_id,
-      userId: member.user_id,
-      email: usersById.get(member.user_id) ?? member.user_id,
-      role: member.role as TenantRole,
-      createdAt: member.created_at,
-    })),
-    globalAdmins: globalAdminsResult.data.map((admin) => ({
-      userId: admin.user_id,
-      email: usersById.get(admin.user_id) ?? admin.user_id,
-      createdAt: admin.created_at,
-    })),
+    members: (
+      membersUnavailable
+        ? []
+        : (fallbackMembersResult?.data ?? membersResult.data ?? [])
+    ).map((member) => ({
+        tenantId: member.tenant_id,
+        userId: member.user_id,
+        email: usersById.get(member.user_id) ?? member.user_id,
+        role: member.role as TenantRole,
+        createdAt:
+          "created_at" in member && typeof member.created_at === "string"
+            ? member.created_at
+            : new Date().toISOString(),
+      })),
+    globalAdmins: globalAdminsUnavailable
+      ? [
+          {
+            userId: access.user?.id ?? "bootstrap",
+            email: access.user?.email ?? "admin bootstrap",
+            createdAt: new Date().toISOString(),
+          },
+        ]
+      : (globalAdminsResult.data ?? []).map((admin) => ({
+          userId: admin.user_id,
+          email: usersById.get(admin.user_id) ?? admin.user_id,
+          createdAt: admin.created_at,
+        })),
   };
 }

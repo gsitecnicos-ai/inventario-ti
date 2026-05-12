@@ -8,6 +8,21 @@ import type { Database } from "./database.types";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const bootstrapGlobalAdminEmails = process.env.BOOTSTRAP_GLOBAL_ADMIN_EMAILS;
+
+function isBootstrapGlobalAdmin(email?: string | null) {
+  if (!email || !bootstrapGlobalAdminEmails) {
+    return false;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  return bootstrapGlobalAdminEmails
+    .split(",")
+    .map((adminEmail) => adminEmail.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(normalizedEmail);
+}
 
 export function hasSupabaseConfig() {
   return Boolean(supabaseUrl && (publishableKey || serviceRoleKey));
@@ -93,11 +108,13 @@ export async function getCurrentAccess() {
     supabase.rpc("is_global_admin"),
     supabase.rpc("can_manage_assets"),
   ]);
+  const isBootstrapAdmin = isBootstrapGlobalAdmin(userData.user.email);
+  const isGlobalAdmin = Boolean(globalAdminResult.data || isBootstrapAdmin);
 
   return {
     user: userData.user,
-    isGlobalAdmin: globalAdminResult.data ?? false,
-    canManageAssets: manageAssetsResult.data ?? false,
+    isGlobalAdmin,
+    canManageAssets: Boolean(manageAssetsResult.data || isGlobalAdmin),
   };
 }
 
