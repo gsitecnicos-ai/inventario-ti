@@ -16,6 +16,17 @@ function safeFileName(value: string) {
     .toLowerCase();
 }
 
+function getAppOrigin(request: Request) {
+  const configuredOrigin =
+    process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+
+  if (configuredOrigin?.trim()) {
+    return configuredOrigin.trim().replace(/\/+$/, "");
+  }
+
+  return new URL(request.url).origin;
+}
+
 function psString(value: string) {
   return `'${value.replaceAll("'", "''")}'`;
 }
@@ -58,7 +69,7 @@ export async function GET(
     );
   }
 
-  const origin = new URL(request.url).origin;
+  const origin = getAppOrigin(request);
   const endpoint = `${origin}/api/agent/checkin`;
   const agentUrl = `${origin}/downloads/inventario-ti-agent-windows-amd64.exe`;
   const taskName = "Inventario TI Agent";
@@ -72,7 +83,12 @@ $ConfigPath = Join-Path $InstallDir 'config.json'
 $AgentUrl = ${psString(agentUrl)}
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Invoke-WebRequest -Uri $AgentUrl -OutFile $AgentPath
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Invoke-WebRequest -Uri $AgentUrl -OutFile $AgentPath -UseBasicParsing
+
+if (!(Test-Path $AgentPath)) {
+  throw "Nao foi possivel baixar o agente em $AgentPath"
+}
 
 $DeviceId = $env:COMPUTERNAME
 try {

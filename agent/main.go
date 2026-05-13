@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -43,27 +44,43 @@ type Payload struct {
 }
 
 func loadConfig() (*Config, error) {
-	file, err := os.Open("config.json")
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+	configPaths := []string{"config.json"}
 
-	bytes, err := os.ReadFile(file.Name())
-	if err != nil {
-		return nil, err
+	if exePath, err := os.Executable(); err == nil {
+		configPaths = append(configPaths, filepath.Join(filepath.Dir(exePath), "config.json"))
 	}
 
-	var config Config
-	if err := json.Unmarshal(bytes, &config); err != nil {
-		return nil, err
+	if programData := os.Getenv("ProgramData"); programData != "" {
+		configPaths = append(configPaths, filepath.Join(programData, "InventarioTIAgent", "config.json"))
 	}
 
-	if config.IntervalMinutes <= 0 {
-		config.IntervalMinutes = 10
+	var readErr error
+
+	for _, path := range configPaths {
+		bytes, err := os.ReadFile(path)
+		if err != nil {
+			readErr = err
+			continue
+		}
+
+		var config Config
+		if err := json.Unmarshal(bytes, &config); err != nil {
+			return nil, fmt.Errorf("erro ao ler %s: %w", path, err)
+		}
+
+		if config.IntervalMinutes <= 0 {
+			config.IntervalMinutes = 10
+		}
+
+		fmt.Println("Config carregada:", path)
+		return &config, nil
 	}
 
-	return &config, nil
+	if readErr != nil {
+		return nil, readErr
+	}
+
+	return nil, fmt.Errorf("config.json nao encontrado")
 }
 
 func getIP() string {
@@ -119,7 +136,7 @@ func main() {
 
 	config, err := loadConfig()
 	if err != nil {
-		fmt.Println("Erro ao carregar config.json")
+		fmt.Println("Erro ao carregar config.json:", err)
 		return
 	}
 
