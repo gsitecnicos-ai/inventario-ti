@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -103,7 +104,14 @@ func send(endpoint string, data *Payload) {
 	}
 	defer resp.Body.Close()
 
+	fmt.Println("Enviado para:", endpoint)
 	fmt.Println("Enviado com status:", resp.Status)
+
+	// Loga o body da resposta para diagnosticar 400/401/500
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+	if len(bodyBytes) > 0 {
+		fmt.Println("Resposta:", string(bodyBytes))
+	}
 }
 
 func main() {
