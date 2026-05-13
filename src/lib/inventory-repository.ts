@@ -128,6 +128,7 @@ export async function getInventoryDashboard(
     !fallbackTenantsResult &&
     !minimalTenantsResult
   ) {
+    // Falha real: não existe nenhum caminho de leitura para tenants.
     console.error("Supabase inventory query failed", {
       tenants: tenantsResult.error,
     });
@@ -141,16 +142,16 @@ export async function getInventoryDashboard(
   }
 
   if (fallbackTenantsResult?.error && !minimalTenantsResult) {
-    console.error("Supabase tenants fallback query failed", {
-      tenants: fallbackTenantsResult.error,
-    });
+    // Cenário esperado durante rollout de schema/migrations.
+    // Evita poluir logs.
   }
 
   if (minimalTenantsResult?.error) {
-    console.error("Supabase tenants minimal query failed", {
-      tenants: minimalTenantsResult.error,
-    });
+    // Cenário esperado durante rollout de schema/migrations.
+    // Evita poluir logs.
   }
+
+
 
   const summaries = new Map(
     ((summariesResult.error ? [] : summariesResult.data) as TenantSummaryRow[]).map((summary) => [
@@ -181,6 +182,7 @@ export async function getInventoryDashboard(
   if (summariesResult.error && !isMissingSchemaError(summariesResult.error)) {
     console.error("Supabase tenant summaries query failed", summariesResult.error);
   }
+
 
   const tenants = tenantRows.map((tenant) => ({
     id: tenant.id,
