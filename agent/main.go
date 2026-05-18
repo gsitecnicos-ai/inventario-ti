@@ -140,19 +140,20 @@ func main() {
 		return
 	}
 
-	if config.Endpoint == "" || config.TenantSlug == "" || config.DeviceID == "" || config.APIKey == "" {
-		fmt.Println("config.json precisa de endpoint, tenant_slug, device_id e api_key")
+	if config.Endpoint == "" || config.TenantSlug == "" || config.APIKey == "" {
+		fmt.Println("config.json precisa de endpoint, tenant_slug e api_key")
 		return
 	}
 
 	for {
 		hostname, osys, platform, cpuName, ram := collectSystem()
+		identity := resolveDeviceIdentity(config.DeviceID, hostname)
 		ip := getIP()
 		softwares := collectSoftwares()
 
 		payload := &Payload{
 			TenantSlug: config.TenantSlug,
-			DeviceID:   config.DeviceID,
+			DeviceID:   identity.DeviceID,
 			APIKey:     config.APIKey,
 			Hostname:   hostname,
 			OS:         osys,
@@ -163,6 +164,7 @@ func main() {
 			Softwares:  softwares,
 		}
 
+		fmt.Println("Device ID:", identity.DeviceID, "fonte:", identity.Source)
 		send(config.Endpoint, payload)
 
 		time.Sleep(time.Duration(config.IntervalMinutes) * time.Minute)

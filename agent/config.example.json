@@ -1,7 +1,6 @@
 {
   "endpoint": "https://seu-dominio.com/api/agent/checkin",
   "tenant_slug": "empresa-cliente",
-  "device_id": "NTB-0001",
   "api_key": "troque-esta-chave",
   "interval_minutes": 10
 }

@@ -90,18 +90,9 @@ if (!(Test-Path $AgentPath)) {
   throw "Nao foi possivel baixar o agente em $AgentPath"
 }
 
-$DeviceId = $env:COMPUTERNAME
-try {
-  $Serial = (Get-CimInstance Win32_BIOS).SerialNumber
-  if ($Serial -and $Serial.Trim()) {
-    $DeviceId = $Serial.Trim()
-  }
-} catch {}
-
 $Config = [ordered]@{
   endpoint = ${psString(endpoint)}
   tenant_slug = ${psString(tenant.slug)}
-  device_id = $DeviceId
   api_key = ${psString(tenant.agent_api_key)}
   interval_minutes = 10
 }

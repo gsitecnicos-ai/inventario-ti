@@ -68,7 +68,6 @@ export async function GET(
   const config = {
     endpoint: `${getAppOrigin(request)}/api/agent/checkin`,
     tenant_slug: tenant.slug,
-    device_id: "ALTERE-PATRIMONIO-OU-SERIAL",
     api_key: tenant.agent_api_key,
     interval_minutes: 10,
   };
