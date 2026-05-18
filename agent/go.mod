@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/shirou/gopsutil/v3 v3.24.5
 	golang.org/x/sys v0.43.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (

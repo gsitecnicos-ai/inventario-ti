@@ -10,6 +10,7 @@ import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { AssetTable } from "@/components/dashboard/asset-table";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { TenantList } from "@/components/dashboard/tenant-list";
+import { AgentHeartbeatsFeed } from "@/components/dashboard/agent-heartbeats-feed";
 import { getInventoryDashboard } from "@/lib/inventory-repository";
 import {
   assetStatuses,
@@ -217,6 +218,10 @@ export default async function DashboardPage({ searchParams }: HomeProps) {
           selectedStatus={filters.status}
           query={filters.query}
         />
+
+        {filters.tenantId ? (
+          <AgentHeartbeatsFeed tenantId={filters.tenantId} />
+        ) : null}
 
         <AssetForm tenants={tenants} disabled={!canManage} />
 

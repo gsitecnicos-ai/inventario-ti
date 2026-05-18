@@ -235,6 +235,125 @@ function isMissingSchemaError(error: { message: string } | null | undefined) {
   );
 }
 
+type AgentHeartbeatRow = {
+  id: string;
+  tenant_id: string;
+  asset_id: string;
+  device_id: string;
+  hostname: string;
+  ip_address: string | null;
+  status: string;
+  cpu_usage_percent: number | null;
+  memory_usage_percent: number | null;
+  last_heartbeat_at: string;
+  updated_at: string;
+};
+
+export type AgentStatus = {
+  assetId: string;
+  deviceId: string;
+  hostname: string;
+  status: "online" | "idle" | "offline";
+  lastHeartbeat: string;
+  minutesSinceHeartbeat: number;
+  cpuUsage: number | null;
+  memoryUsage: number | null;
+  ipAddress: string | null;
+};
+
+export async function getAgentStatuses(tenantId: string): Promise<AgentStatus[]> {
+  const supabase = await createAuthenticatedSupabaseClient();
+
+  if (!supabase) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("agent_heartbeats")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to fetch agent heartbeats:", error);
+    return [];
+  }
+
+  const now = new Date();
+  
+  return ((data as AgentHeartbeatRow[]) || []).map((row) => {
+    const lastHeartbeat = new Date(row.last_heartbeat_at);
+    const minutesSince = Math.floor((now.getTime() - lastHeartbeat.getTime()) / 60000);
+    
+    let status: "online" | "idle" | "offline";
+    if (minutesSince <= 10) {
+      status = "online";
+    } else if (minutesSince <= 60) {
+      status = "idle";
+    } else {
+      status = "offline";
+    }
+
+    return {
+      assetId: row.asset_id,
+      deviceId: row.device_id,
+      hostname: row.hostname,
+      status,
+      lastHeartbeat: formatActivityTime(row.last_heartbeat_at),
+      minutesSinceHeartbeat: minutesSince,
+      cpuUsage: row.cpu_usage_percent,
+      memoryUsage: row.memory_usage_percent,
+      ipAddress: row.ip_address,
+    };
+  });
+}
+
+export async function getAgentStatus(assetId: string): Promise<AgentStatus | null> {
+  const supabase = await createAuthenticatedSupabaseClient();
+
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("agent_heartbeats")
+    .select("*")
+    .eq("asset_id", assetId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  const row = data as AgentHeartbeatRow;
+  const now = new Date();
+  const lastHeartbeat = new Date(row.last_heartbeat_at);
+  const minutesSince = Math.floor((now.getTime() - lastHeartbeat.getTime()) / 60000);
+  
+  let status: "online" | "idle" | "offline";
+  if (minutesSince <= 10) {
+    status = "online";
+  } else if (minutesSince <= 60) {
+    status = "idle";
+  } else {
+    status = "offline";
+  }
+
+  return {
+    assetId: row.asset_id,
+    deviceId: row.device_id,
+    hostname: row.hostname,
+    status,
+    lastHeartbeat: formatActivityTime(row.last_heartbeat_at),
+    minutesSinceHeartbeat: minutesSince,
+    cpuUsage: row.cpu_usage_percent,
+    memoryUsage: row.memory_usage_percent,
+    ipAddress: row.ip_address,
+  };
+}
+
 function getMockDashboard(filters: AssetFilters = {}): InventoryDashboardData {
   const filteredAssets = mockAssets.filter((asset) => {
     const matchesTenant = filters.tenantId

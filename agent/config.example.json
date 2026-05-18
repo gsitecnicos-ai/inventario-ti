@@ -1,6 +1,10 @@
 {
   "endpoint": "https://seu-dominio.com/api/agent/checkin",
+  "heartbeat_endpoint": "https://seu-dominio.com/api/agent/heartbeat",
   "tenant_slug": "empresa-cliente",
+  "device_id": "opcional-device-id",
   "api_key": "troque-esta-chave",
+  "heartbeat_minutes": 5,
+  "inventory_hours": 12,
   "interval_minutes": 10
 }
