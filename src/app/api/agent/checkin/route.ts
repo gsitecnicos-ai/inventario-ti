@@ -1,4 +1,5 @@
 import { createAdminSupabaseClient } from "@/lib/supabase-server";
+import { parseAgentJsonRequest } from "@/lib/agent-request";
 import { createHash } from "node:crypto";
 import type { Json } from "@/lib/database.types";
 
@@ -6,6 +7,25 @@ type SoftwareEntry = {
   name?: string;
   version?: string;
   publisher?: string;
+};
+
+type SoftwareChangeRecord = {
+  name?: string;
+  version?: string;
+  publisher?: string;
+};
+
+type SoftwareChanges = {
+  added?: SoftwareChangeRecord[];
+  removed?: SoftwareChangeRecord[];
+};
+
+type AgentTelemetry = {
+  collection_duration_ms?: number;
+  memory_usage_mb?: number;
+  retry_count?: number;
+  failed_requests?: number;
+  timestamp?: string;
 };
 
 type StorageDeviceEntry = {
@@ -26,7 +46,9 @@ type AgentPayload = {
   ram?: number;
   ip?: string;
   softwares?: SoftwareEntry[];
+  software_changes?: SoftwareChanges;
   storage_devices?: StorageDeviceEntry[];
+  telemetry?: AgentTelemetry;
 };
 
 type HardwareKey = "ram" | "storage" | "os";
@@ -330,36 +352,40 @@ export async function POST(request: Request) {
     return Response.json({ error: assetError.message }, { status: 500 });
   }
 
-  if (payload.softwares && payload.softwares.length > 0) {
-    try {
-      await syncAssetSoftwares(supabase, tenant.id, asset.id, payload.softwares);
-    } catch (error) {
-      return Response.json(
-        { error: error instanceof Error ? error.message : "Falha ao sincronizar inventario de software." },
-        { status: 500 },
-      );
-    }
-  }
+  const { error: queueError } = await supabase.from("agent_inventory_jobs").insert({
+    tenant_id: tenant.id,
+    asset_id: asset.id,
+    device_id: deviceId.toUpperCase(),
+    payload: {
+      hostname,
+      os: osName,
+      platform,
+      cpu,
+      ram,
+      ip,
+      softwares: payload.softwares ?? [],
+      software_changes: payload.software_changes ?? null,
+      storage_devices: payload.storage_devices ?? [],
+      hardware_snapshots: hardwareSnapshots,
+      telemetry: payload.telemetry ?? null,
+    },
+    status: "pending",
+    attempts: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
 
-  try {
-    await syncHardwareHistory(supabase, tenant.id, asset.id, hardwareSnapshots);
-  } catch (error) {
+  if (queueError) {
     return Response.json(
-      { error: error instanceof Error ? error.message : "Falha ao sincronizar historico de hardware." },
+      { error: queueError.message ?? "Falha ao criar job de sincronizacao." },
       { status: 500 },
     );
   }
-
-  await supabase.from("activities").insert({
-    tenant_id: tenant.id,
-    asset_id: asset.id,
-    title: "Check-in do agente",
-    description: `${hostname} informou ${osName} / ${platform}.`,
-  });
 
   return Response.json({
     ok: true,
     tenant: tenant.name,
     asset_id: asset.id,
-  });
+    queued: true,
+  }, { status: 202 });
 }
