@@ -51,6 +51,117 @@ Para um administrador global com acesso a todos os clientes, aplique tambem a
 migration `supabase/migrations/002_global_admins.sql` e rode
 `supabase/global-admin.example.sql` trocando o e-mail pelo usuario correto.
 
+## TLS/HTTPS Obrigatório
+
+Por padrão, toda comunicação (servidor Next.js e agente Go) força HTTPS em produção para evitar ataques MITM.
+
+### Servidor Next.js
+
+- Middleware (`src/middleware.ts`) redireciona HTTP → HTTPS automaticamente.
+- Adiciona header HSTS com `max-age=63072000`.
+- Proxy/load-balancer **deve** definir `x-forwarded-proto: https` para requests seguros.
+
+### Agente Go
+
+- Rejeita endpoints sem HTTPS em produção.
+- Endpoints no config.json devem começar com `https://`.
+
+### Desenvolvimento Local
+
+Para permitir HTTP em dev, defina:
+
+```bash
+ALLOW_HTTP=true
+NODE_ENV=development
+```
+
+O agente Go respeita as mesmas variáveis para permitir endpoints HTTP.
+
+## Code Signing do Agente
+
+O executável `inventario-ti-agent-windows-amd64.exe` **deve ser assinado digitalmente** para reduzir
+falsos positivos de antivírus.
+
+### Obter Certificado Code Signing
+
+1. Adquirir certificado EV (Extended Validation) ou Standard code signing em CA confiada:
+   - Sectigo, DigiCert, GlobalSign, etc.
+   - EV oferece melhor reputação junto AV.
+
+2. Exportar certificado em formato PFX (chave privada + certificado):
+   ```bash
+   # Exemplo: salve como cert.pfx
+   ```
+
+### Assinar Executável
+
+Após compilar o agente em Windows PowerShell como Administrador:
+
+```powershell
+# Variáveis
+$CertPath = "C:\path\to\cert.pfx"
+$CertPassword = "sua-senha-do-certificado"  # Use SecureString para automatizar
+$ExePath = "agent\inventario-ti-agent-windows-amd64.exe"
+$Timestamp = "http://timestamp.sectigo.com"  # Servidor de timestamp confiável
+
+# Assinar
+$SecPassword = ConvertTo-SecureString -String $CertPassword -AsPlainText -Force
+Set-AuthenticodeSignature -FilePath $ExePath `
+  -Certificate (Get-PfxCertificate -FilePath $CertPath) `
+  -IncludeChain All `
+  -TimestampServer $Timestamp `
+  -Force
+
+# Verificar assinatura
+Get-AuthenticodeSignature -FilePath $ExePath
+```
+
+**Nota:** Use um servidor de timestamp confiável (Sectigo, Verisign, etc.) para garantir que a assinatura
+permaneça válida após expiração do certificado.
+
+### Scripts de Build e Assinatura
+
+Utilitários PowerShell estão disponíveis em `scripts/`:
+
+#### `scripts/build-agent.ps1`
+
+Compila o agente e opcionalmente assina:
+
+```powershell
+# Compilar sem assinar
+.\scripts\build-agent.ps1
+
+# Compilar e assinar
+.\scripts\build-agent.ps1 -SignCert "C:\path\to\cert.pfx" -SignPassword "sua-senha"
+
+# Usar variáveis de ambiente
+.\scripts\build-agent.ps1 -SignCert $env:CODESIGN_CERT_PATH -SignPassword $env:CODESIGN_CERT_PASSWORD
+```
+
+#### `scripts/sign-agent.ps1`
+
+Assina um executável já compilado:
+
+```powershell
+.\scripts\sign-agent.ps1 -CertPath "C:\path\to\cert.pfx" -CertPassword "sua-senha"
+```
+
+### CI/CD (GitHub Actions, etc.)
+
+Para automatizar build e assinatura em pipeline:
+
+```yaml
+# .github/workflows/build-agent.yml
+- name: Build Agent
+  run: |
+    ${{ github.workspace }}\scripts\build-agent.ps1 `
+      -SignCert ${{ secrets.CODESIGN_CERT_PATH }} `
+      -SignPassword ${{ secrets.CODESIGN_CERT_PASSWORD }}
+  shell: powershell
+```
+
+**Nota:** Armazene certificado e senha como secrets no repositório, nunca committe no Git.
+
 ## Getting Started
 
 First, run the development server:

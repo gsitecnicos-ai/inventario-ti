@@ -129,6 +129,225 @@ export type Database = {
           },
         ];
       };
+      software_inventory: {
+        Row: {
+          created_at: string;
+          first_seen: string;
+          id: string;
+          last_seen: string;
+          name: string;
+          publisher: string;
+          tenant_id: string;
+          updated_at: string;
+          version: string;
+        };
+        Insert: {
+          created_at?: string;
+          first_seen?: string;
+          id?: string;
+          last_seen?: string;
+          name: string;
+          publisher?: string;
+          tenant_id: string;
+          updated_at?: string;
+          version?: string;
+        };
+        Update: {
+          created_at?: string;
+          first_seen?: string;
+          id?: string;
+          last_seen?: string;
+          name?: string;
+          publisher?: string;
+          tenant_id?: string;
+          updated_at?: string;
+          version?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "software_inventory_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      asset_software: {
+        Row: {
+          asset_id: string;
+          created_at: string;
+          id: string;
+          installed_at: string;
+          software_inventory_id: string;
+          tenant_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          asset_id: string;
+          created_at?: string;
+          id?: string;
+          installed_at?: string;
+          software_inventory_id: string;
+          tenant_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          asset_id?: string;
+          created_at?: string;
+          id?: string;
+          installed_at?: string;
+          software_inventory_id?: string;
+          tenant_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "asset_software_asset_id_fkey";
+            columns: ["asset_id"];
+            isOneToOne: false;
+            referencedRelation: "assets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "asset_software_software_inventory_id_fkey";
+            columns: ["software_inventory_id"];
+            isOneToOne: false;
+            referencedRelation: "software_inventory";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "asset_software_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      hardware_history: {
+        Row: {
+          asset_id: string;
+          created_at: string;
+          event_type: Database["public"]["Enums"]["hardware_history_event"];
+          hardware_key: "ram" | "storage" | "os";
+          id: string;
+          metadata: Json;
+          new_value: string;
+          observed_at: string;
+          old_value: string | null;
+          source: string;
+          tenant_id: string;
+        };
+        Insert: {
+          asset_id: string;
+          created_at?: string;
+          event_type: Database["public"]["Enums"]["hardware_history_event"];
+          hardware_key: "ram" | "storage" | "os";
+          id?: string;
+          metadata?: Json;
+          new_value: string;
+          observed_at?: string;
+          old_value?: string | null;
+          source?: string;
+          tenant_id: string;
+        };
+        Update: {
+          asset_id?: string;
+          created_at?: string;
+          event_type?: Database["public"]["Enums"]["hardware_history_event"];
+          hardware_key?: "ram" | "storage" | "os";
+          id?: string;
+          metadata?: Json;
+          new_value?: string;
+          observed_at?: string;
+          old_value?: string | null;
+          source?: string;
+          tenant_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "hardware_history_asset_id_fkey";
+            columns: ["asset_id"];
+            isOneToOne: false;
+            referencedRelation: "assets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "hardware_history_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agent_heartbeats: {
+        Row: {
+          asset_id: string;
+          created_at: string;
+          cpu_usage_percent: number | null;
+          device_id: string;
+          hostname: string;
+          id: string;
+          ip_address: string | null;
+          last_heartbeat_at: string;
+          last_seen_at: string;
+          memory_usage_percent: number | null;
+          status: string;
+          tenant_id: string;
+          updated_at: string;
+          uptime_seconds: number | null;
+        };
+        Insert: {
+          asset_id: string;
+          created_at?: string;
+          cpu_usage_percent?: number | null;
+          device_id: string;
+          hostname: string;
+          id?: string;
+          ip_address?: string | null;
+          last_heartbeat_at?: string;
+          last_seen_at?: string;
+          memory_usage_percent?: number | null;
+          status?: string;
+          tenant_id: string;
+          updated_at?: string;
+          uptime_seconds?: number | null;
+        };
+        Update: {
+          asset_id?: string;
+          created_at?: string;
+          cpu_usage_percent?: number | null;
+          device_id?: string;
+          hostname?: string;
+          id?: string;
+          ip_address?: string | null;
+          last_heartbeat_at?: string;
+          last_seen_at?: string;
+          memory_usage_percent?: number | null;
+          status?: string;
+          tenant_id?: string;
+          updated_at?: string;
+          uptime_seconds?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_heartbeats_asset_id_fkey";
+            columns: ["asset_id"];
+            isOneToOne: false;
+            referencedRelation: "assets";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agent_heartbeats_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       tenant_members: {
         Row: {
           created_at: string;
@@ -162,6 +381,7 @@ export type Database = {
         Row: {
           address_line: string | null;
           agent_api_key: string | null;
+          agent_api_key_hash: string | null;
           city: string | null;
           cnpj: string | null;
           compliance: number;
@@ -181,6 +401,7 @@ export type Database = {
         Insert: {
           address_line?: string | null;
           agent_api_key?: string | null;
+          agent_api_key_hash?: string | null;
           city?: string | null;
           cnpj?: string | null;
           compliance?: number;
@@ -200,6 +421,7 @@ export type Database = {
         Update: {
           address_line?: string | null;
           agent_api_key?: string | null;
+          agent_api_key_hash?: string | null;
           city?: string | null;
           cnpj?: string | null;
           compliance?: number;
@@ -250,6 +472,141 @@ export type Database = {
           },
         ];
       };
+      alerts: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          asset_id: string | null;
+          alert_type: string;
+          severity: string;
+          title: string;
+          description: string | null;
+          device_id: string | null;
+          hostname: string | null;
+          detected_at: string;
+          resolved_at: string | null;
+          metadata: Json | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          asset_id?: string | null;
+          alert_type: string;
+          severity?: string;
+          title: string;
+          description?: string | null;
+          device_id?: string | null;
+          hostname?: string | null;
+          detected_at?: string;
+          resolved_at?: string | null;
+          metadata?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          asset_id?: string | null;
+          alert_type?: string;
+          severity?: string;
+          title?: string;
+          description?: string | null;
+          device_id?: string | null;
+          hostname?: string | null;
+          detected_at?: string;
+          resolved_at?: string | null;
+          metadata?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      compliance_rules: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          rule_type: string;
+          name: string;
+          description: string | null;
+          enabled: boolean;
+          severity: string;
+          parameters: Json | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          rule_type: string;
+          name: string;
+          description?: string | null;
+          enabled?: boolean;
+          severity?: string;
+          parameters?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          rule_type?: string;
+          name?: string;
+          description?: string | null;
+          enabled?: boolean;
+          severity?: string;
+          parameters?: Json | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      device_compliance_status: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          asset_id: string;
+          compliance_score: number;
+          violations_count: number;
+          critical_violations: number;
+          has_antivirus: boolean;
+          windows_updated: boolean | null;
+          forbidden_software_found: string[] | null;
+          last_check_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          asset_id: string;
+          compliance_score?: number;
+          violations_count?: number;
+          critical_violations?: number;
+          has_antivirus?: boolean;
+          windows_updated?: boolean | null;
+          forbidden_software_found?: string[] | null;
+          last_check_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          asset_id?: string;
+          compliance_score?: number;
+          violations_count?: number;
+          critical_violations?: number;
+          has_antivirus?: boolean;
+          windows_updated?: boolean | null;
+          forbidden_software_found?: string[] | null;
+          last_check_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -286,6 +643,11 @@ export type Database = {
     Enums: {
       asset_criticality: "Baixa" | "Media" | "Alta";
       asset_status: "Em uso" | "Atencao" | "Manutencao" | "Estoque";
+      hardware_history_event:
+        | "initial_snapshot"
+        | "ram_upgrade"
+        | "storage_change"
+        | "os_change";
     };
     CompositeTypes: Record<string, never>;
   };

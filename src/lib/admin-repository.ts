@@ -79,7 +79,7 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
       supabase
         .from("tenants")
         .select(
-          "id, slug, name, segment, compliance, cnpj, contact_name, contact_email, contact_phone, address_line, city, state, postal_code, logo_url, agent_api_key",
+          "id, slug, name, segment, compliance, cnpj, contact_name, contact_email, contact_phone, address_line, city, state, postal_code, logo_url, agent_api_key, agent_api_key_hash",
         )
         .order("name"),
       supabase
@@ -198,8 +198,8 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
       state: tenant.state,
       postalCode: tenant.postal_code,
       logoUrl: tenant.logo_url,
-      hasAgentApiKey: Boolean(tenant.agent_api_key),
-      agentApiKey: tenant.agent_api_key,
+      hasAgentApiKey: Boolean((tenant as any).agent_api_key_hash || tenant.agent_api_key),
+      agentApiKey: null,
     })),
     users: usersResult.data.users.map((user) => ({
       id: user.id,

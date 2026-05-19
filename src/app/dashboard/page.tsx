@@ -11,6 +11,10 @@ import { AssetTable } from "@/components/dashboard/asset-table";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { TenantList } from "@/components/dashboard/tenant-list";
 import { AgentHeartbeatsFeed } from "@/components/dashboard/agent-heartbeats-feed";
+import { AgentsStatus } from "@/components/dashboard/agents-status";
+import { AlertsFeed } from "@/components/dashboard/alerts-feed";
+import { ComplianceSummary } from "@/components/dashboard/compliance-summary";
+import { HardwareHistoryFeed } from "@/components/dashboard/hardware-history-feed";
 import { getInventoryDashboard } from "@/lib/inventory-repository";
 import {
   assetStatuses,
@@ -66,7 +70,7 @@ export default async function DashboardPage({ searchParams }: HomeProps) {
   }
 
   const dashboard = await getInventoryDashboard(filters);
-  const { activities, assets, source, tenants } = dashboard;
+  const { activities, assets, hardwareHistory, source, tenants } = dashboard;
   const canManage = Boolean(access.canManageAssets && source === "supabase");
   const totalAssets = tenants.reduce((total, tenant) => total + tenant.assets, 0);
   const totalPending = tenants.reduce(
@@ -181,6 +185,8 @@ export default async function DashboardPage({ searchParams }: HomeProps) {
           <ActivityFeed activities={activities} />
         </section>
 
+        <HardwareHistoryFeed events={hardwareHistory} />
+
         <section className="grid gap-4 lg:grid-cols-3">
           <article className="rounded-lg border border-zinc-200 bg-white p-5">
             <h2 className="text-lg font-semibold text-zinc-950">
@@ -220,7 +226,20 @@ export default async function DashboardPage({ searchParams }: HomeProps) {
         />
 
         {filters.tenantId ? (
-          <AgentHeartbeatsFeed tenantId={filters.tenantId} />
+          <>
+            <AgentHeartbeatsFeed tenantId={filters.tenantId} />
+            <div className="rounded-lg border border-zinc-200 bg-white p-5">
+              <AgentsStatus tenantId={filters.tenantId} />
+            </div>
+            <section className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-lg border border-zinc-200 bg-white p-5">
+                <AlertsFeed tenantId={filters.tenantId} />
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-white p-5">
+                <ComplianceSummary tenantId={filters.tenantId} />
+              </div>
+            </section>
+          </>
         ) : null}
 
         <AssetForm tenants={tenants} disabled={!canManage} />

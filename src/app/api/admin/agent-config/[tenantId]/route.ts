@@ -1,10 +1,12 @@
 import { createAdminSupabaseClient, requireGlobalAdmin } from "@/lib/supabase-server";
+import { createHash, randomUUID } from "node:crypto";
 
 type TenantAgentRow = {
   id: string;
   slug: string | null;
   name: string;
   agent_api_key: string | null;
+  agent_api_key_hash: string | null;
 };
 
 function safeFileName(value: string) {
@@ -20,11 +22,27 @@ function getAppOrigin(request: Request) {
   const configuredOrigin =
     process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_APP_URL;
 
+  const allowHttp = process.env.ALLOW_HTTP === "true" || process.env.NODE_ENV === "development";
+
   if (configuredOrigin?.trim()) {
-    return configuredOrigin.trim().replace(/\/+$/, "");
+    const trimmed = configuredOrigin.trim().replace(/\/+$/, "");
+    try {
+      const u = new URL(trimmed);
+      if (!allowHttp && u.protocol === "http:") {
+        u.protocol = "https:";
+        return u.toString().replace(/\/+$/, "");
+      }
+      return trimmed;
+    } catch (err) {
+      return trimmed;
+    }
   }
 
-  return new URL(request.url).origin;
+  const reqOrigin = new URL(request.url).origin;
+  if (!allowHttp) {
+    return reqOrigin.replace(/^http:/, "https:");
+  }
+  return reqOrigin;
 }
 
 export async function GET(
@@ -45,7 +63,7 @@ export async function GET(
   const { tenantId } = await params;
   const { data, error } = await supabase
     .from("tenants")
-    .select("id, slug, name, agent_api_key")
+    .select("id, slug, name, agent_api_key, agent_api_key_hash")
     .eq("id", tenantId)
     .single();
 
@@ -58,18 +76,39 @@ export async function GET(
 
   const tenant = data as TenantAgentRow;
 
-  if (!tenant.slug || !tenant.agent_api_key) {
+  if (!tenant.slug) {
     return Response.json(
-      { error: "Empresa sem slug ou chave do agente." },
+      { error: "Empresa sem slug." },
       { status: 400 },
     );
   }
 
+  let plaintextKey: string | null = null;
+
+  if (tenant.agent_api_key) {
+    plaintextKey = tenant.agent_api_key;
+  } else if (tenant.agent_api_key_hash) {
+    // Rotate and give admin a fresh key to download the config
+    plaintextKey = `agt_${randomUUID().replaceAll("-", "")}`;
+    const newHash = createHash("sha256").update(plaintextKey).digest("hex");
+    await supabase.from("tenants").update({ agent_api_key_hash: newHash }).eq("id", tenantId);
+  } else {
+    plaintextKey = `agt_${randomUUID().replaceAll("-", "")}`;
+    const newHash = createHash("sha256").update(plaintextKey).digest("hex");
+    await supabase.from("tenants").update({ agent_api_key_hash: newHash }).eq("id", tenantId);
+  }
+
   const config = {
     endpoint: `${getAppOrigin(request)}/api/agent/checkin`,
+    heartbeat_endpoint: `${getAppOrigin(request)}/api/agent/heartbeat`,
+    update_endpoint: `${getAppOrigin(request)}/api/agent/update`,
     tenant_slug: tenant.slug,
-    api_key: tenant.agent_api_key,
+    api_key: plaintextKey,
+    heartbeat_minutes: 5,
+    inventory_hours: 12,
+    update_minutes: 60,
     interval_minutes: 10,
+    service_name: "InventarioTIAgent",
   };
   const body = JSON.stringify(config, null, 2);
   const fileName = `${safeFileName(tenant.name) || "empresa"}-agent-config.json`;

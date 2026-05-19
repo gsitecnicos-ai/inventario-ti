@@ -1,4 +1,6 @@
 import { createAdminSupabaseClient } from "@/lib/supabase-server";
+import { generateAlertsFromHeartbeat, resolveAlert } from "@/lib/alerts-service";
+import { createHash } from "node:crypto";
 
 type HeartbeatPayload = {
   tenant_slug?: string;
@@ -53,11 +55,22 @@ export async function POST(request: Request) {
   // Validar tenant e API key
   const { data: tenant, error: tenantError } = await supabase
     .from("tenants")
-    .select("id, name, agent_api_key")
+    .select("id, name, agent_api_key, agent_api_key_hash")
     .eq("slug", tenantSlug)
     .single();
 
-  if (tenantError || !tenant || tenant.agent_api_key !== apiKey) {
+  if (tenantError || !tenant) {
+    return Response.json({ error: "Agente nao autorizado." }, { status: 401 });
+  }
+
+  const providedHash = createHash("sha256").update(apiKey).digest("hex");
+  const isValid = Boolean(
+    (tenant as any).agent_api_key_hash
+      ? (tenant as any).agent_api_key_hash === providedHash
+      : tenant.agent_api_key === apiKey,
+  );
+
+  if (!isValid) {
     return Response.json({ error: "Agente nao autorizado." }, { status: 401 });
   }
 
@@ -120,6 +133,7 @@ export async function POST(request: Request) {
         memory_usage_percent: memoryUsage,
         uptime_seconds: uptime,
         last_heartbeat_at: new Date().toISOString(),
+        last_seen_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
       {
@@ -130,6 +144,20 @@ export async function POST(request: Request) {
   if (heartbeatError) {
     return Response.json({ error: heartbeatError.message }, { status: 500 });
   }
+
+  // Gerar alertas automáticos
+  await generateAlertsFromHeartbeat(
+    supabase,
+    tenant.id,
+    assetId,
+    deviceId.toUpperCase(),
+    hostname,
+    cpuUsage,
+    memoryUsage
+  );
+
+  // Resolver alerta de offline se havia
+  await resolveAlert(supabase, tenant.id, assetId, "agent_offline");
 
   return Response.json({
     ok: true,

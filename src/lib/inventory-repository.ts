@@ -6,6 +6,7 @@ import {
   tenants as mockTenants,
   type Activity,
   type Asset,
+  type HardwareHistory,
   type Tenant,
 } from "./inventory-data";
 import { createAuthenticatedSupabaseClient } from "./supabase-server";
@@ -47,6 +48,18 @@ type ActivityRow = {
   occurred_at: string;
 };
 
+type HardwareHistoryRow = {
+  id: string;
+  tenant_id: string;
+  asset_id: string;
+  event_type: HardwareHistory["eventType"];
+  hardware_key: HardwareHistory["hardwareKey"];
+  old_value: string | null;
+  new_value: string;
+  observed_at: string;
+  assets: { tag: string } | null;
+};
+
 type TenantSummaryRow = {
   tenant_id: string;
   units: number;
@@ -58,6 +71,7 @@ export type InventoryDashboardData = {
   tenants: Tenant[];
   assets: Asset[];
   activities: Activity[];
+  hardwareHistory: HardwareHistory[];
   source: "supabase" | "mock";
 };
 
@@ -113,13 +127,18 @@ export async function getInventoryDashboard(
     ? await supabase.from("tenants").select("id, name").order("name")
     : null;
 
-  const [assetsResult, activitiesResult, summariesResult] = await Promise.all([
+  const [assetsResult, activitiesResult, hardwareHistoryResult, summariesResult] = await Promise.all([
     assetsQuery,
     supabase
       .from("activities")
       .select("id, tenant_id, title, description, occurred_at")
       .order("occurred_at", { ascending: false })
       .limit(10),
+    supabase
+      .from("hardware_history")
+      .select("id, tenant_id, asset_id, event_type, hardware_key, old_value, new_value, observed_at, assets(tag)")
+      .order("observed_at", { ascending: false })
+      .limit(8),
     supabase.rpc("get_tenant_summaries"),
   ]);
 
@@ -137,6 +156,7 @@ export async function getInventoryDashboard(
       tenants: [],
       assets: [],
       activities: [],
+      hardwareHistory: [],
       source: "supabase",
     };
   }
@@ -170,6 +190,9 @@ export async function getInventoryDashboard(
   const activityRows = (isMissingSchemaError(activitiesResult.error)
     ? []
     : (activitiesResult.data ?? [])) as ActivityRow[];
+  const hardwareHistoryRows = (isMissingSchemaError(hardwareHistoryResult.error)
+    ? []
+    : (hardwareHistoryResult.data ?? [])) as HardwareHistoryRow[];
 
   if (assetsResult.error && !isMissingSchemaError(assetsResult.error)) {
     console.error("Supabase assets query failed", assetsResult.error);
@@ -177,6 +200,10 @@ export async function getInventoryDashboard(
 
   if (activitiesResult.error && !isMissingSchemaError(activitiesResult.error)) {
     console.error("Supabase activities query failed", activitiesResult.error);
+  }
+
+  if (hardwareHistoryResult.error && !isMissingSchemaError(hardwareHistoryResult.error)) {
+    console.error("Supabase hardware history query failed", hardwareHistoryResult.error);
   }
 
   if (summariesResult.error && !isMissingSchemaError(summariesResult.error)) {
@@ -218,11 +245,23 @@ export async function getInventoryDashboard(
       time: formatActivityTime(activity.occurred_at),
     }),
   );
+  const hardwareHistory = hardwareHistoryRows.map((event) => ({
+    id: event.id,
+    tenantId: event.tenant_id,
+    assetId: event.asset_id,
+    assetTag: event.assets?.tag ?? event.asset_id,
+    eventType: event.event_type,
+    hardwareKey: event.hardware_key,
+    oldValue: event.old_value,
+    newValue: event.new_value,
+    observedAt: formatActivityTime(event.observed_at),
+  }));
 
   return {
     tenants,
     assets,
     activities,
+    hardwareHistory,
     source: "supabase",
   };
 }
@@ -375,6 +414,7 @@ function getMockDashboard(filters: AssetFilters = {}): InventoryDashboardData {
     tenants: mockTenants,
     assets: filteredAssets,
     activities: mockActivities,
+    hardwareHistory: [],
     source: "mock",
   };
 }

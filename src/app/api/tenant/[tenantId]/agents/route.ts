@@ -1,5 +1,16 @@
 import { createAdminSupabaseClient } from "@/lib/supabase-server";
 
+type AgentStatusSummaryRow = {
+  asset_id: string;
+  device_id: string;
+  hostname: string;
+  status: string;
+  last_seen_at: string;
+  minutes_since_heartbeat: number;
+  cpu_usage_percent: number | null;
+  memory_usage_percent: number | null;
+};
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ tenantId: string }> }
@@ -34,12 +45,12 @@ export async function GET(
       return Response.json({ error: error.message }, { status: 500 });
     }
 
-    const agents = (data || []).map((row: any) => ({
+    const agents = ((data || []) as AgentStatusSummaryRow[]).map((row) => ({
       assetId: row.asset_id,
       deviceId: row.device_id,
       hostname: row.hostname,
       status: row.status,
-      lastHeartbeat: row.last_heartbeat_at,
+      lastHeartbeat: row.last_seen_at,
       minutesSinceHeartbeat: row.minutes_since_heartbeat,
       cpuUsage: row.cpu_usage_percent,
       memoryUsage: row.memory_usage_percent,

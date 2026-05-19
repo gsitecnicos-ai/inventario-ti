@@ -21,6 +21,11 @@ function createAgentApiKey() {
   return `agt_${randomUUID().replaceAll("-", "")}`;
 }
 
+function hashAgentApiKey(plain: string) {
+  const { createHash } = require("node:crypto");
+  return createHash("sha256").update(plain).digest("hex");
+}
+
 function redirectWithMessage(
   path: string,
   type: "success" | "error",
@@ -413,7 +418,7 @@ export async function createTenant(formData: FormData) {
       state: readOptionalString(formData, "state"),
       postal_code: readOptionalString(formData, "postalCode"),
       logo_url: logoUrl,
-      agent_api_key: agentApiKey,
+      agent_api_key_hash: hashAgentApiKey(agentApiKey),
     });
 
     if (isMissingSchemaError(error)) {
@@ -493,9 +498,11 @@ export async function generateTenantAgentKey(formData: FormData) {
   try {
     const supabase = await getSupabaseForGlobalAdmin();
     const tenantId = readRequiredString(formData, "tenantId");
+    const newPlain = createAgentApiKey();
+    const newHash = hashAgentApiKey(newPlain);
     const { error } = await supabase
       .from("tenants")
-      .update({ agent_api_key: createAgentApiKey() } as never)
+      .update({ agent_api_key_hash: newHash } as never)
       .eq("id", tenantId);
 
     if (error) {

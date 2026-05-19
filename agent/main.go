@@ -11,24 +11,33 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/kardianos/service"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
+const AgentVersion = "0.3.0"
+const defaultServiceName = "InventarioTIAgent"
+const defaultServiceDisplayName = "Inventario TI Agent"
+
 type Config struct {
 	Endpoint          string `json:"endpoint"`
 	HeartbeatEndpoint string `json:"heartbeat_endpoint"`
+	UpdateEndpoint    string `json:"update_endpoint"`
 	TenantSlug        string `json:"tenant_slug"`
 	DeviceID          string `json:"device_id"`
 	APIKey            string `json:"api_key"`
 	IntervalMinutes   int    `json:"interval_minutes"`
 	HeartbeatMinutes  int    `json:"heartbeat_minutes"`
 	InventoryHours    int    `json:"inventory_hours"`
+	UpdateMinutes     int    `json:"update_minutes"`
+	ServiceName       string `json:"service_name"`
 }
 
 type HeartbeatPayload struct {
@@ -48,17 +57,25 @@ type Software struct {
 	Publisher string `json:"publisher"`
 }
 
+type StorageDevice struct {
+	Model     string `json:"model"`
+	Serial    string `json:"serial"`
+	SizeBytes uint64 `json:"size_bytes"`
+	MediaType string `json:"media_type"`
+}
+
 type Payload struct {
-	TenantSlug string     `json:"tenant_slug"`
-	DeviceID   string     `json:"device_id"`
-	APIKey     string     `json:"api_key"`
-	Hostname   string     `json:"hostname"`
-	OS         string     `json:"os"`
-	Platform   string     `json:"platform"`
-	CPU        string     `json:"cpu"`
-	RAM        uint64     `json:"ram"`
-	IP         string     `json:"ip"`
-	Softwares  []Software `json:"softwares"`
+	TenantSlug     string          `json:"tenant_slug"`
+	DeviceID       string          `json:"device_id"`
+	APIKey         string          `json:"api_key"`
+	Hostname       string          `json:"hostname"`
+	OS             string          `json:"os"`
+	Platform       string          `json:"platform"`
+	CPU            string          `json:"cpu"`
+	RAM            uint64          `json:"ram"`
+	IP             string          `json:"ip"`
+	Softwares      []Software      `json:"softwares"`
+	StorageDevices []StorageDevice `json:"storage_devices"`
 }
 
 // QueuedPayload é um payload armazenado em fila
@@ -71,6 +88,35 @@ type QueuedPayload struct {
 
 // Queue manager global
 var queueMutex sync.Mutex
+
+type agentService struct {
+	config *Config
+	stop   chan struct{}
+	done   chan struct{}
+}
+
+func (agent *agentService) Start(service.Service) error {
+	agent.stop = make(chan struct{})
+	agent.done = make(chan struct{})
+
+	go func() {
+		defer close(agent.done)
+		runAgent(agent.config, agent.stop)
+	}()
+
+	return nil
+}
+
+func (agent *agentService) Stop(service.Service) error {
+	close(agent.stop)
+
+	select {
+	case <-agent.done:
+	case <-time.After(15 * time.Second):
+	}
+
+	return nil
+}
 
 func initLogger() error {
 	programData := os.Getenv("ProgramData")
@@ -206,25 +252,26 @@ func processQueue() {
 		// Ler arquivo
 		fileContent, err := os.ReadFile(filePath)
 		if err != nil {
-			fmt.Printf("Erro ao ler fila %s: %v\n", f.Name(), err)
+			log.Printf("Erro ao ler fila %s: %v", f.Name(), err)
 			continue
 		}
 
 		var queued QueuedPayload
 		if err := json.Unmarshal(fileContent, &queued); err != nil {
-			fmt.Printf("Erro ao desserializar fila %s: %v\n", f.Name(), err)
+			log.Printf("Erro ao desserializar fila %s: %v", f.Name(), err)
 			continue
 		}
 
 		// Tentar enviar
 		success := false
 
-		if queued.Type == "heartbeat" {
+		switch queued.Type {
+		case "heartbeat":
 			var hb HeartbeatPayload
 			if err := json.Unmarshal(queued.Data, &hb); err == nil {
 				success = sendHeartbeatWithRetry(queued.Endpoint, &hb, false)
 			}
-		} else if queued.Type == "inventory" {
+		case "inventory":
 			var payload Payload
 			if err := json.Unmarshal(queued.Data, &payload); err == nil {
 				success = sendWithRetry(queued.Endpoint, &payload, false)
@@ -237,7 +284,7 @@ func processQueue() {
 			os.Remove(filePath)
 			queueMutex.Unlock()
 
-			fmt.Println("Fila enviada e removida:", f.Name())
+			log.Println("Fila enviada e removida:", f.Name())
 		}
 	}
 }
@@ -252,7 +299,7 @@ func sendWithRetry(endpoint string, data *Payload, queue bool) bool {
 	resp, err := client.Do(req)
 
 	if err != nil {
-		fmt.Println("Erro ao enviar:", err)
+		log.Println("Erro ao enviar:", err)
 		if queue {
 			queuePayload("inventory", endpoint, data)
 		}
@@ -260,12 +307,12 @@ func sendWithRetry(endpoint string, data *Payload, queue bool) bool {
 	}
 	defer resp.Body.Close()
 
-	fmt.Println("Enviado para:", endpoint)
-	fmt.Println("Enviado com status:", resp.Status)
+	log.Println("Enviado para:", endpoint)
+	log.Println("Enviado com status:", resp.Status)
 
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
 	if len(bodyBytes) > 0 {
-		fmt.Println("Resposta:", string(bodyBytes))
+		log.Println("Resposta:", string(bodyBytes))
 	}
 
 	// Considerar sucesso apenas se status 2xx
@@ -282,7 +329,7 @@ func sendHeartbeatWithRetry(endpoint string, data *HeartbeatPayload, queue bool)
 	resp, err := client.Do(req)
 
 	if err != nil {
-		fmt.Println("Erro ao enviar heartbeat:", err)
+		log.Println("Erro ao enviar heartbeat:", err)
 		if queue {
 			queuePayload("heartbeat", endpoint, data)
 		}
@@ -290,11 +337,11 @@ func sendHeartbeatWithRetry(endpoint string, data *HeartbeatPayload, queue bool)
 	}
 	defer resp.Body.Close()
 
-	fmt.Println("Heartbeat enviado para:", endpoint, "Status:", resp.Status)
+	log.Println("Heartbeat enviado para:", endpoint, "Status:", resp.Status)
 
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
 	if len(bodyBytes) > 0 {
-		fmt.Println("Resposta heartbeat:", string(bodyBytes))
+		log.Println("Resposta heartbeat:", string(bodyBytes))
 	}
 
 	// Considerar sucesso apenas se status 2xx
@@ -338,8 +385,20 @@ func loadConfig() (*Config, error) {
 			config.InventoryHours = 12
 		}
 
+		if config.UpdateMinutes <= 0 {
+			config.UpdateMinutes = 60
+		}
+
 		if config.HeartbeatEndpoint == "" {
 			config.HeartbeatEndpoint = config.Endpoint + "/api/agent/heartbeat"
+		}
+
+		if config.UpdateEndpoint == "" {
+			config.UpdateEndpoint = config.Endpoint + "/api/agent/update"
+		}
+
+		if config.ServiceName == "" {
+			config.ServiceName = defaultServiceName
 		}
 
 		log.Println("Config carregada:", path)
@@ -394,38 +453,46 @@ func collectUptime() int64 {
 	return int64(h.Uptime)
 }
 
-func main() {
-	if err := initLogger(); err != nil {
-		fmt.Println("Erro ao inicializar logger:", err)
-		return
-	}
-
-	log.Println("Agent iniciado...")
-
-	config, err := loadConfig()
-	if err != nil {
-		log.Println("Erro ao carregar config.json:", err)
-		return
-	}
-
+func runAgent(config *Config, stop <-chan struct{}) {
 	if config.Endpoint == "" || config.TenantSlug == "" || config.APIKey == "" {
 		log.Println("config.json precisa de endpoint, tenant_slug e api_key")
 		return
+	}
+
+	allowHttp := strings.ToLower(os.Getenv("ALLOW_HTTP")) == "true" || strings.ToLower(os.Getenv("NODE_ENV")) == "development"
+	if !allowHttp {
+		// Ensure endpoints use HTTPS to avoid MITM in production
+		if !strings.HasPrefix(strings.ToLower(config.Endpoint), "https://") {
+			log.Println("Endpoint nao usa HTTPS. Defina ALLOW_HTTP=true para permitir HTTP em desenvolvimento.")
+			return
+		}
+		if !strings.HasPrefix(strings.ToLower(config.HeartbeatEndpoint), "https://") {
+			log.Println("HeartbeatEndpoint nao usa HTTPS. Defina ALLOW_HTTP=true para permitir HTTP em desenvolvimento.")
+			return
+		}
+		if !strings.HasPrefix(strings.ToLower(config.UpdateEndpoint), "https://") {
+			log.Println("UpdateEndpoint nao usa HTTPS. Defina ALLOW_HTTP=true para permitir HTTP em desenvolvimento.")
+			return
+		}
 	}
 
 	hostname, osys, platform, cpuName, ram := collectSystem()
 	identity := resolveDeviceIdentity(config.DeviceID, hostname)
 
 	log.Println("Device ID:", identity.DeviceID, "fonte:", identity.Source)
+	log.Println("Versao do agente:", AgentVersion)
 	log.Println("Heartbeat a cada", config.HeartbeatMinutes, "minutos")
 	log.Println("Inventario completo a cada", config.InventoryHours, "horas")
+	log.Println("Auto update a cada", config.UpdateMinutes, "minutos")
 
 	heartbeatTicker := time.NewTicker(time.Duration(config.HeartbeatMinutes) * time.Minute)
 	inventoryTicker := time.NewTicker(time.Duration(config.InventoryHours) * time.Hour)
+	updateTicker := time.NewTicker(time.Duration(config.UpdateMinutes) * time.Minute)
 	queueTicker := time.NewTicker(1 * time.Minute) // Processar fila a cada minuto
 
 	defer heartbeatTicker.Stop()
 	defer inventoryTicker.Stop()
+	defer updateTicker.Stop()
 	defer queueTicker.Stop()
 
 	// Enviar heartbeat e inventario na inicializacao
@@ -445,18 +512,20 @@ func main() {
 	go func() {
 		ip := getIP()
 		softwares := collectSoftwares()
+		storageDevices := collectStorageDevices()
 
 		payload := &Payload{
-			TenantSlug: config.TenantSlug,
-			DeviceID:   identity.DeviceID,
-			APIKey:     config.APIKey,
-			Hostname:   hostname,
-			OS:         osys,
-			Platform:   platform,
-			CPU:        cpuName,
-			RAM:        ram,
-			IP:         ip,
-			Softwares:  softwares,
+			TenantSlug:     config.TenantSlug,
+			DeviceID:       identity.DeviceID,
+			APIKey:         config.APIKey,
+			Hostname:       hostname,
+			OS:             osys,
+			Platform:       platform,
+			CPU:            cpuName,
+			RAM:            ram,
+			IP:             ip,
+			Softwares:      softwares,
+			StorageDevices: storageDevices,
 		}
 
 		sendWithRetry(config.Endpoint, payload, true)
@@ -464,9 +533,14 @@ func main() {
 
 	// Processar fila na inicializacao
 	go processQueue()
+	go checkForUpdate(config)
 
 	for {
 		select {
+		case <-stop:
+			log.Println("Agent parado.")
+			return
+
 		case <-heartbeatTicker.C:
 			go func() {
 				sendHeartbeatWithRetry(config.HeartbeatEndpoint, &HeartbeatPayload{
@@ -485,18 +559,20 @@ func main() {
 			go func() {
 				ip := getIP()
 				softwares := collectSoftwares()
+				storageDevices := collectStorageDevices()
 
 				payload := &Payload{
-					TenantSlug: config.TenantSlug,
-					DeviceID:   identity.DeviceID,
-					APIKey:     config.APIKey,
-					Hostname:   hostname,
-					OS:         osys,
-					Platform:   platform,
-					CPU:        cpuName,
-					RAM:        ram,
-					IP:         ip,
-					Softwares:  softwares,
+					TenantSlug:     config.TenantSlug,
+					DeviceID:       identity.DeviceID,
+					APIKey:         config.APIKey,
+					Hostname:       hostname,
+					OS:             osys,
+					Platform:       platform,
+					CPU:            cpuName,
+					RAM:            ram,
+					IP:             ip,
+					Softwares:      softwares,
+					StorageDevices: storageDevices,
 				}
 
 				sendWithRetry(config.Endpoint, payload, true)
@@ -504,6 +580,70 @@ func main() {
 
 		case <-queueTicker.C:
 			go processQueue()
+
+		case <-updateTicker.C:
+			go checkForUpdate(config)
 		}
+	}
+}
+
+func buildService(config *Config) (service.Service, error) {
+	serviceConfig := &service.Config{
+		Name:        config.ServiceName,
+		DisplayName: defaultServiceDisplayName,
+		Description: "Envia inventario, heartbeats e updates de ativos para Inventario TI.",
+		Option: service.KeyValue{
+			"StartType": "automatic",
+		},
+	}
+
+	return service.New(&agentService{config: config}, serviceConfig)
+}
+
+func runServiceCommand(svc service.Service, command string) bool {
+	if command == "" {
+		return false
+	}
+
+	switch command {
+	case "install", "uninstall", "start", "stop", "restart":
+		if err := service.Control(svc, command); err != nil {
+			log.Printf("Erro ao executar comando de servico %s: %v", command, err)
+			os.Exit(1)
+		}
+
+		log.Println("Comando de servico executado:", command)
+		return true
+	default:
+		return false
+	}
+}
+
+func main() {
+	if err := initLogger(); err != nil {
+		log.Println("Erro ao inicializar logger:", err)
+		return
+	}
+
+	log.Println("Agent iniciado...")
+
+	config, err := loadConfig()
+	if err != nil {
+		log.Println("Erro ao carregar config.json:", err)
+		return
+	}
+
+	svc, err := buildService(config)
+	if err != nil {
+		log.Println("Erro ao preparar servico:", err)
+		return
+	}
+
+	if len(os.Args) > 1 && runServiceCommand(svc, strings.ToLower(os.Args[1])) {
+		return
+	}
+
+	if err := svc.Run(); err != nil {
+		log.Println("Erro ao executar servico:", err)
 	}
 }

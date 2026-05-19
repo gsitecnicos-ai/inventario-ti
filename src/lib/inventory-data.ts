@@ -44,6 +44,18 @@ export type Activity = {
   time: string;
 };
 
+export type HardwareHistory = {
+  id: string;
+  tenantId: string;
+  assetId: string;
+  assetTag: string;
+  eventType: "initial_snapshot" | "ram_upgrade" | "storage_change" | "os_change";
+  hardwareKey: "ram" | "storage" | "os";
+  oldValue: string | null;
+  newValue: string;
+  observedAt: string;
+};
+
 export const tenants: Tenant[] = [
   {
     id: "aurora",

@@ -85,6 +85,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             >
               Dashboard
             </Link>
+            <Link
+              href="/admin/compliance"
+              className="inline-flex h-11 items-center justify-center rounded-md border border-zinc-300 bg-white px-5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100"
+            >
+              Compliance
+            </Link>
             <form action={signOut}>
               <SubmitButton
                 label="Sair"
