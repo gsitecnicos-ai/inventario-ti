@@ -285,6 +285,7 @@ export type Database = {
       agent_heartbeats: {
         Row: {
           asset_id: string;
+          collection_duration_ms: number | null;
           created_at: string;
           cpu_usage_percent: number | null;
           device_id: string;
@@ -295,12 +296,16 @@ export type Database = {
           last_seen_at: string;
           memory_usage_percent: number | null;
           status: string;
+          telemetry_memory_bytes: number | null;
+          telemetry_queue_depth: number | null;
+          telemetry_retry_count: number | null;
           tenant_id: string;
           updated_at: string;
           uptime_seconds: number | null;
         };
         Insert: {
           asset_id: string;
+          collection_duration_ms?: number | null;
           created_at?: string;
           cpu_usage_percent?: number | null;
           device_id: string;
@@ -311,12 +316,16 @@ export type Database = {
           last_seen_at?: string;
           memory_usage_percent?: number | null;
           status?: string;
+          telemetry_memory_bytes?: number | null;
+          telemetry_queue_depth?: number | null;
+          telemetry_retry_count?: number | null;
           tenant_id: string;
           updated_at?: string;
           uptime_seconds?: number | null;
         };
         Update: {
           asset_id?: string;
+          collection_duration_ms?: number | null;
           created_at?: string;
           cpu_usage_percent?: number | null;
           device_id?: string;
@@ -327,6 +336,9 @@ export type Database = {
           last_seen_at?: string;
           memory_usage_percent?: number | null;
           status?: string;
+          telemetry_memory_bytes?: number | null;
+          telemetry_queue_depth?: number | null;
+          telemetry_retry_count?: number | null;
           tenant_id?: string;
           updated_at?: string;
           uptime_seconds?: number | null;
@@ -341,6 +353,56 @@ export type Database = {
           },
           {
             foreignKeyName: "agent_heartbeats_tenant_id_fkey";
+            columns: ["tenant_id"];
+            isOneToOne: false;
+            referencedRelation: "tenants";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agent_checkin_queue: {
+        Row: {
+          created_at: string;
+          device_id: string;
+          error_message: string | null;
+          id: string;
+          last_attempted_at: string | null;
+          payload: Json;
+          payload_type: string;
+          processed_at: string | null;
+          status: string;
+          attempts: number;
+          tenant_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          device_id: string;
+          error_message?: string | null;
+          id?: string;
+          last_attempted_at?: string | null;
+          payload: Json;
+          payload_type?: string;
+          processed_at?: string | null;
+          status?: string;
+          attempts?: number;
+          tenant_id: string;
+        };
+        Update: {
+          created_at?: string;
+          device_id?: string;
+          error_message?: string | null;
+          id?: string;
+          last_attempted_at?: string | null;
+          payload?: Json;
+          payload_type?: string;
+          processed_at?: string | null;
+          status?: string;
+          attempts?: number;
+          tenant_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_checkin_queue_tenant_id_fkey";
             columns: ["tenant_id"];
             isOneToOne: false;
             referencedRelation: "tenants";

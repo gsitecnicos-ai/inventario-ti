@@ -2,16 +2,16 @@
 # Script para assinar o executavel do agente Inventario TI com certificado code signing
 # 
 # Uso:
-#   .\scripts\sign-agent.ps1 -CertPath "C:\path\to\cert.pfx" -CertPassword "senha"
-#   .\scripts\sign-agent.ps1 -CertPath "C:\path\to\cert.pfx" -CertPassword "senha" -ExePath "agent\inventario-ti-agent-windows-amd64.exe"
-#   .\scripts\sign-agent.ps1 -CertPath $env:CODESIGN_CERT_PATH -CertPassword $env:CODESIGN_CERT_PASSWORD
+#   $certPassword = Read-Host -AsSecureString "Digite a senha do certificado"
+#   .\scripts\sign-agent.ps1 -CertPath "C:\path\to\cert.pfx" -CertPassword $certPassword
+#   .\scripts\sign-agent.ps1 -CertPath "C:\path\to\cert.pfx" -CertPassword $certPassword -ExePath "agent\inventario-ti-agent-windows-amd64.exe"
 
 param(
     [Parameter(Mandatory=$true)]
     [string]$CertPath,
 
     [Parameter(Mandatory=$true)]
-    [string]$CertPassword,
+    [System.Security.SecureString]$CertPassword,
 
     [Parameter(Mandatory=$false)]
     [string]$ExePath = "agent\inventario-ti-agent-windows-amd64.exe",
@@ -36,11 +36,11 @@ Write-Host "Certificado: $CertPath"
 Write-Host "Servidor de timestamp: $TimestampServer"
 
 try {
-    # Converter senha para SecureString
-    $SecPassword = ConvertTo-SecureString -String $CertPassword -AsPlainText -Force
+    # Usar a senha segura fornecida pelo parâmetro
+    $SecPassword = $CertPassword
     
-    # Carregar certificado
-    $Certificate = Get-PfxCertificate -FilePath $CertPath
+    # Carregar certificado protegido por senha
+    $Certificate = Get-PfxCertificate -FilePath $CertPath -Password $SecPassword
     Write-Host "Certificado carregado: $($Certificate.Subject)"
     
     # Assinar executavel

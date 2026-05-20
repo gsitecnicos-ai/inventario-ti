@@ -1,6 +1,14 @@
 import { createAdminSupabaseClient } from "@/lib/supabase-server";
 import { generateAlertsFromHeartbeat, resolveAlert } from "@/lib/alerts-service";
 import { createHash } from "node:crypto";
+import { parseJsonRequest } from "@/lib/agent-request";
+
+type Telemetry = {
+  collection_duration_ms?: number;
+  retry_count?: number;
+  memory_usage_bytes?: number;
+  queue_depth?: number;
+};
 
 type HeartbeatPayload = {
   tenant_slug?: string;
@@ -11,6 +19,7 @@ type HeartbeatPayload = {
   cpu_usage_percent?: number;
   memory_usage_percent?: number;
   uptime_seconds?: number;
+  telemetry?: Telemetry;
 };
 
 function readText(value: unknown) {
@@ -36,7 +45,7 @@ export async function POST(request: Request) {
   let payload: HeartbeatPayload;
 
   try {
-    payload = (await request.json()) as HeartbeatPayload;
+    payload = await parseJsonRequest<HeartbeatPayload>(request);
   } catch {
     return Response.json({ error: "JSON invalido." }, { status: 400 });
   }
@@ -118,6 +127,8 @@ export async function POST(request: Request) {
     assetId = newAsset.id;
   }
 
+  const telemetry = payload.telemetry ?? {};
+
   // Upsert heartbeat (leve e rápido)
   const { error: heartbeatError } = await supabase
     .from("agent_heartbeats")
@@ -132,6 +143,10 @@ export async function POST(request: Request) {
         cpu_usage_percent: cpuUsage,
         memory_usage_percent: memoryUsage,
         uptime_seconds: uptime,
+        collection_duration_ms: telemetry.collection_duration_ms ?? null,
+        telemetry_retry_count: telemetry.retry_count ?? null,
+        telemetry_memory_bytes: telemetry.memory_usage_bytes ?? null,
+        telemetry_queue_depth: telemetry.queue_depth ?? null,
         last_heartbeat_at: new Date().toISOString(),
         last_seen_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

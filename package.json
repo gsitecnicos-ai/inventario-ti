@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "worker": "node ./scripts/inventory-worker.mjs"
+    "process-agent-queue": "node ./scripts/process-agent-checkin-queue.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",

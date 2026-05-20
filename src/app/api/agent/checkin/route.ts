@@ -1,6 +1,7 @@
 import { createAdminSupabaseClient } from "@/lib/supabase-server";
-import { parseAgentJsonRequest } from "@/lib/agent-request";
 import { createHash } from "node:crypto";
+import { parseJsonRequest } from "@/lib/agent-request";
+import { queueAgentCheckin } from "@/lib/agent-queue";
 import type { Json } from "@/lib/database.types";
 
 type SoftwareEntry = {
@@ -9,30 +10,18 @@ type SoftwareEntry = {
   publisher?: string;
 };
 
-type SoftwareChangeRecord = {
-  name?: string;
-  version?: string;
-  publisher?: string;
-};
-
-type SoftwareChanges = {
-  added?: SoftwareChangeRecord[];
-  removed?: SoftwareChangeRecord[];
-};
-
-type AgentTelemetry = {
-  collection_duration_ms?: number;
-  memory_usage_mb?: number;
-  retry_count?: number;
-  failed_requests?: number;
-  timestamp?: string;
-};
-
 type StorageDeviceEntry = {
   model?: string;
   serial?: string;
   size_bytes?: number;
   media_type?: string;
+};
+
+type Telemetry = {
+  collection_duration_ms?: number;
+  retry_count?: number;
+  memory_usage_bytes?: number;
+  queue_depth?: number;
 };
 
 type AgentPayload = {
@@ -46,9 +35,9 @@ type AgentPayload = {
   ram?: number;
   ip?: string;
   softwares?: SoftwareEntry[];
-  software_changes?: SoftwareChanges;
   storage_devices?: StorageDeviceEntry[];
-  telemetry?: AgentTelemetry;
+  payload_type?: "inventory_snapshot" | "inventory_delta";
+  telemetry?: Telemetry;
 };
 
 type HardwareKey = "ram" | "storage" | "os";
@@ -252,7 +241,7 @@ export async function POST(request: Request) {
   let payload: AgentPayload;
 
   try {
-    payload = (await request.json()) as AgentPayload;
+    payload = await parseJsonRequest<AgentPayload>(request);
   } catch {
     return Response.json({ error: "JSON invalido." }, { status: 400 });
   }
@@ -289,103 +278,28 @@ export async function POST(request: Request) {
     return Response.json({ error: "Agente nao autorizado." }, { status: 401 });
   }
 
-  const hostname = readText(payload.hostname) ?? deviceId;
-  const osName = readText(payload.os) ?? "Sistema operacional";
-  const platform = readText(payload.platform) ?? "desconhecido";
-  const cpu = readText(payload.cpu) ?? "CPU nao informada";
-  const ip = readText(payload.ip) ?? "IP nao informado";
-  const ramGb =
-    typeof payload.ram === "number" && Number.isFinite(payload.ram)
-      ? Math.round(payload.ram / 1024 / 1024 / 1024)
-      : null;
-  const model = ramGb ? `${cpu} / ${ramGb} GB RAM` : cpu;
-  const storageDevices = normalizeStorageDevices(payload.storage_devices);
-  const hardwareSnapshots: HardwareSnapshot[] = [
-    {
-      hardware_key: "os",
-      event_type: "os_change",
-      new_value: `${osName} / ${platform}`,
-      metadata: { os: osName, platform },
-    },
-    ...(payload.ram
-      ? [
-          {
-            hardware_key: "ram" as const,
-            event_type: "ram_upgrade" as const,
-            new_value: formatBytes(payload.ram),
-            metadata: { bytes: payload.ram },
-          },
-        ]
-      : []),
-    ...(storageDevices.length
-      ? [
-          {
-            hardware_key: "storage" as const,
-            event_type: "storage_change" as const,
-            new_value: storageDevices.map((device) => device.label).join(" | "),
-            metadata: { devices: storageDevices },
-          },
-        ]
-      : []),
-  ];
+  const payloadType = payload.payload_type === "inventory_delta" ? "inventory_delta" : "inventory_snapshot";
 
-  const { data: asset, error: assetError } = await supabase
-    .from("assets")
-    .upsert(
-      {
-        tenant_id: tenant.id,
-        tag: deviceId.toUpperCase(),
-        type: "Computador",
-        model,
-        owner: hostname,
-        location: ip,
-        status: "Em uso",
-        criticality: "Media",
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "tenant_id,tag" },
-    )
-    .select("id")
-    .single();
-
-  if (assetError) {
-    return Response.json({ error: assetError.message }, { status: 500 });
-  }
-
-  const { error: queueError } = await supabase.from("agent_inventory_jobs").insert({
-    tenant_id: tenant.id,
-    asset_id: asset.id,
-    device_id: deviceId.toUpperCase(),
-    payload: {
-      hostname,
-      os: osName,
-      platform,
-      cpu,
-      ram,
-      ip,
-      softwares: payload.softwares ?? [],
-      software_changes: payload.software_changes ?? null,
-      storage_devices: payload.storage_devices ?? [],
-      hardware_snapshots: hardwareSnapshots,
-      telemetry: payload.telemetry ?? null,
-    },
-    status: "pending",
-    attempts: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  });
+  const { error: queueError } = await queueAgentCheckin(
+    supabase,
+    tenant.id,
+    deviceId.toUpperCase(),
+    payloadType,
+    payload as Json,
+  );
 
   if (queueError) {
-    return Response.json(
-      { error: queueError.message ?? "Falha ao criar job de sincronizacao." },
-      { status: 500 },
-    );
+    return Response.json({ error: queueError.message }, { status: 500 });
   }
 
-  return Response.json({
-    ok: true,
-    tenant: tenant.name,
-    asset_id: asset.id,
-    queued: true,
-  }, { status: 202 });
+  return Response.json(
+    {
+      ok: true,
+      queued: true,
+      tenant: tenant.name,
+      asset_tag: deviceId.toUpperCase(),
+      payload_type: payloadType,
+    },
+    { status: 202 },
+  );
 }

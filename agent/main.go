@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -41,14 +45,15 @@ type Config struct {
 }
 
 type HeartbeatPayload struct {
-	TenantSlug         string  `json:"tenant_slug"`
-	DeviceID           string  `json:"device_id"`
-	APIKey             string  `json:"api_key"`
-	Hostname           string  `json:"hostname"`
-	IP                 string  `json:"ip"`
-	CPUUsagePercent    float64 `json:"cpu_usage_percent"`
-	MemoryUsagePercent float64 `json:"memory_usage_percent"`
-	UptimeSeconds      int64   `json:"uptime_seconds"`
+	TenantSlug         string     `json:"tenant_slug"`
+	DeviceID           string     `json:"device_id"`
+	APIKey             string     `json:"api_key"`
+	Hostname           string     `json:"hostname"`
+	IP                 string     `json:"ip"`
+	CPUUsagePercent    float64    `json:"cpu_usage_percent"`
+	MemoryUsagePercent float64    `json:"memory_usage_percent"`
+	UptimeSeconds      int64      `json:"uptime_seconds"`
+	Telemetry          *Telemetry `json:"telemetry,omitempty"`
 }
 
 type Software struct {
@@ -65,17 +70,28 @@ type StorageDevice struct {
 }
 
 type Payload struct {
-	TenantSlug     string          `json:"tenant_slug"`
-	DeviceID       string          `json:"device_id"`
-	APIKey         string          `json:"api_key"`
-	Hostname       string          `json:"hostname"`
-	OS             string          `json:"os"`
-	Platform       string          `json:"platform"`
-	CPU            string          `json:"cpu"`
-	RAM            uint64          `json:"ram"`
-	IP             string          `json:"ip"`
-	Softwares      []Software      `json:"softwares"`
-	StorageDevices []StorageDevice `json:"storage_devices"`
+	TenantSlug            string          `json:"tenant_slug"`
+	DeviceID              string          `json:"device_id"`
+	APIKey                string          `json:"api_key"`
+	Hostname              string          `json:"hostname"`
+	OS                    string          `json:"os"`
+	Platform              string          `json:"platform"`
+	CPU                   string          `json:"cpu"`
+	RAM                   uint64          `json:"ram"`
+	IP                    string          `json:"ip"`
+	Softwares             []Software      `json:"softwares,omitempty"`
+	StorageDevices        []StorageDevice `json:"storage_devices,omitempty"`
+	PayloadType           string          `json:"payload_type,omitempty"`
+	InventoryHash         string          `json:"inventory_hash,omitempty"`
+	PreviousInventoryHash string          `json:"previous_inventory_hash,omitempty"`
+	Telemetry             *Telemetry      `json:"telemetry,omitempty"`
+}
+
+type Telemetry struct {
+	CollectionDurationMs int64  `json:"collection_duration_ms,omitempty"`
+	RetryCount           int    `json:"retry_count,omitempty"`
+	MemoryUsageBytes     uint64 `json:"memory_usage_bytes,omitempty"`
+	QueueDepth           int    `json:"queue_depth,omitempty"`
 }
 
 // QueuedPayload é um payload armazenado em fila
@@ -187,6 +203,140 @@ func getNextQueueNumber(queueDir string) int {
 	return maxNum + 1
 }
 
+func countQueueFiles() int {
+	queueDir, err := getQueueDir()
+	if err != nil {
+		return 0
+	}
+
+	files, err := os.ReadDir(queueDir)
+	if err != nil {
+		return 0
+	}
+
+	count := 0
+	for _, f := range files {
+		if !f.IsDir() && filepath.Ext(f.Name()) == ".json" {
+			count++
+		}
+	}
+
+	return count
+}
+
+func gzipPayload(data []byte) ([]byte, error) {
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+	if _, err := writer.Write(data); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+func computeInventoryHash(osName, platform, cpuName string, ram uint64, softwares []Software, storageDevices []StorageDevice) string {
+	sortedSoftwares := append([]Software(nil), softwares...)
+	sort.Slice(sortedSoftwares, func(i, j int) bool {
+		if sortedSoftwares[i].Name != sortedSoftwares[j].Name {
+			return sortedSoftwares[i].Name < sortedSoftwares[j].Name
+		}
+		if sortedSoftwares[i].Version != sortedSoftwares[j].Version {
+			return sortedSoftwares[i].Version < sortedSoftwares[j].Version
+		}
+		return sortedSoftwares[i].Publisher < sortedSoftwares[j].Publisher
+	})
+
+	sortedStorage := append([]StorageDevice(nil), storageDevices...)
+	sort.Slice(sortedStorage, func(i, j int) bool {
+		if sortedStorage[i].Model != sortedStorage[j].Model {
+			return sortedStorage[i].Model < sortedStorage[j].Model
+		}
+		if sortedStorage[i].Serial != sortedStorage[j].Serial {
+			return sortedStorage[i].Serial < sortedStorage[j].Serial
+		}
+		if sortedStorage[i].MediaType != sortedStorage[j].MediaType {
+			return sortedStorage[i].MediaType < sortedStorage[j].MediaType
+		}
+		return sortedStorage[i].SizeBytes < sortedStorage[j].SizeBytes
+	})
+
+	payloadData, _ := json.Marshal(struct {
+		OS             string          `json:"os"`
+		Platform       string          `json:"platform"`
+		CPU            string          `json:"cpu"`
+		RAM            uint64          `json:"ram"`
+		Softwares      []Software      `json:"softwares"`
+		StorageDevices []StorageDevice `json:"storage_devices"`
+	}{
+		OS:             osName,
+		Platform:       platform,
+		CPU:            cpuName,
+		RAM:            ram,
+		Softwares:      sortedSoftwares,
+		StorageDevices: sortedStorage,
+	})
+
+	hash := sha256.Sum256(payloadData)
+	return hex.EncodeToString(hash[:])
+}
+
+func loadInventoryState() (string, error) {
+	queueDir, err := getQueueDir()
+	if err != nil {
+		return "", err
+	}
+
+	statePath := filepath.Join(queueDir, "inventory-state.json")
+	content, err := os.ReadFile(statePath)
+	if err != nil {
+		return "", nil
+	}
+
+	var state struct {
+		LastInventoryHash string `json:"last_inventory_hash"`
+	}
+	if err := json.Unmarshal(content, &state); err != nil {
+		return "", nil
+	}
+
+	return state.LastInventoryHash, nil
+}
+
+func saveInventoryState(hash string) error {
+	queueDir, err := getQueueDir()
+	if err != nil {
+		return err
+	}
+
+	statePath := filepath.Join(queueDir, "inventory-state.json")
+	state := struct {
+		LastInventoryHash string `json:"last_inventory_hash"`
+	}{
+		LastInventoryHash: hash,
+	}
+
+	content, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(statePath, content, 0644)
+}
+
+func buildTelemetry(durationMs int64, retryCount int) *Telemetry {
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	return &Telemetry{
+		CollectionDurationMs: durationMs,
+		RetryCount:           retryCount,
+		MemoryUsageBytes:     mem.Alloc,
+		QueueDepth:           countQueueFiles(),
+	}
+}
+
 func queuePayload(payloadType string, endpoint string, data interface{}) error {
 	queueDir, err := getQueueDir()
 	if err != nil {
@@ -291,9 +441,15 @@ func processQueue() {
 
 func sendWithRetry(endpoint string, data *Payload, queue bool) bool {
 	jsonData, _ := json.Marshal(data)
+	compressed, err := gzipPayload(jsonData)
+	if err != nil {
+		log.Println("Erro ao comprimir payload:", err)
+		return false
+	}
 
-	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(compressed))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -321,9 +477,15 @@ func sendWithRetry(endpoint string, data *Payload, queue bool) bool {
 
 func sendHeartbeatWithRetry(endpoint string, data *HeartbeatPayload, queue bool) bool {
 	jsonData, _ := json.Marshal(data)
+	compressed, err := gzipPayload(jsonData)
+	if err != nil {
+		log.Println("Erro ao comprimir heartbeat:", err)
+		return false
+	}
 
-	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(compressed))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -495,6 +657,8 @@ func runAgent(config *Config, stop <-chan struct{}) {
 	defer updateTicker.Stop()
 	defer queueTicker.Stop()
 
+	lastInventoryHash, _ := loadInventoryState()
+
 	// Enviar heartbeat e inventario na inicializacao
 	go func() {
 		sendHeartbeatWithRetry(config.HeartbeatEndpoint, &HeartbeatPayload{
@@ -506,29 +670,48 @@ func runAgent(config *Config, stop <-chan struct{}) {
 			CPUUsagePercent:    collectCPUUsage(),
 			MemoryUsagePercent: collectMemoryUsage(),
 			UptimeSeconds:      collectUptime(),
+			Telemetry:          buildTelemetry(0, 0),
 		}, true)
 	}()
 
 	go func() {
+		start := time.Now()
 		ip := getIP()
 		softwares := collectSoftwares()
 		storageDevices := collectStorageDevices()
-
-		payload := &Payload{
-			TenantSlug:     config.TenantSlug,
-			DeviceID:       identity.DeviceID,
-			APIKey:         config.APIKey,
-			Hostname:       hostname,
-			OS:             osys,
-			Platform:       platform,
-			CPU:            cpuName,
-			RAM:            ram,
-			IP:             ip,
-			Softwares:      softwares,
-			StorageDevices: storageDevices,
+		collectionDuration := time.Since(start).Milliseconds()
+		hash := computeInventoryHash(osys, platform, cpuName, ram, softwares, storageDevices)
+		payloadType := "inventory_snapshot"
+		if hash == lastInventoryHash && hash != "" {
+			payloadType = "inventory_delta"
 		}
 
-		sendWithRetry(config.Endpoint, payload, true)
+		payload := &Payload{
+			TenantSlug:            config.TenantSlug,
+			DeviceID:              identity.DeviceID,
+			APIKey:                config.APIKey,
+			Hostname:              hostname,
+			OS:                    osys,
+			Platform:              platform,
+			CPU:                   cpuName,
+			RAM:                   ram,
+			IP:                    ip,
+			PayloadType:           payloadType,
+			InventoryHash:         hash,
+			PreviousInventoryHash: lastInventoryHash,
+			Telemetry:             buildTelemetry(collectionDuration, 0),
+		}
+
+		if payloadType == "inventory_snapshot" {
+			payload.Softwares = softwares
+			payload.StorageDevices = storageDevices
+		}
+
+		success := sendWithRetry(config.Endpoint, payload, true)
+		if success && payloadType == "inventory_snapshot" {
+			_ = saveInventoryState(hash)
+			lastInventoryHash = hash
+		}
 	}()
 
 	// Processar fila na inicializacao
@@ -543,6 +726,7 @@ func runAgent(config *Config, stop <-chan struct{}) {
 
 		case <-heartbeatTicker.C:
 			go func() {
+				start := time.Now()
 				sendHeartbeatWithRetry(config.HeartbeatEndpoint, &HeartbeatPayload{
 					TenantSlug:         config.TenantSlug,
 					DeviceID:           identity.DeviceID,
@@ -552,30 +736,49 @@ func runAgent(config *Config, stop <-chan struct{}) {
 					CPUUsagePercent:    collectCPUUsage(),
 					MemoryUsagePercent: collectMemoryUsage(),
 					UptimeSeconds:      collectUptime(),
+					Telemetry:          buildTelemetry(time.Since(start).Milliseconds(), 0),
 				}, true)
 			}()
 
 		case <-inventoryTicker.C:
 			go func() {
+				start := time.Now()
 				ip := getIP()
 				softwares := collectSoftwares()
 				storageDevices := collectStorageDevices()
-
-				payload := &Payload{
-					TenantSlug:     config.TenantSlug,
-					DeviceID:       identity.DeviceID,
-					APIKey:         config.APIKey,
-					Hostname:       hostname,
-					OS:             osys,
-					Platform:       platform,
-					CPU:            cpuName,
-					RAM:            ram,
-					IP:             ip,
-					Softwares:      softwares,
-					StorageDevices: storageDevices,
+				collectionDuration := time.Since(start).Milliseconds()
+				hash := computeInventoryHash(osys, platform, cpuName, ram, softwares, storageDevices)
+				payloadType := "inventory_snapshot"
+				if hash == lastInventoryHash && hash != "" {
+					payloadType = "inventory_delta"
 				}
 
-				sendWithRetry(config.Endpoint, payload, true)
+				payload := &Payload{
+					TenantSlug:            config.TenantSlug,
+					DeviceID:              identity.DeviceID,
+					APIKey:                config.APIKey,
+					Hostname:              hostname,
+					OS:                    osys,
+					Platform:              platform,
+					CPU:                   cpuName,
+					RAM:                   ram,
+					IP:                    ip,
+					PayloadType:           payloadType,
+					InventoryHash:         hash,
+					PreviousInventoryHash: lastInventoryHash,
+					Telemetry:             buildTelemetry(collectionDuration, 0),
+				}
+
+				if payloadType == "inventory_snapshot" {
+					payload.Softwares = softwares
+					payload.StorageDevices = storageDevices
+				}
+
+				success := sendWithRetry(config.Endpoint, payload, true)
+				if success && payloadType == "inventory_snapshot" {
+					_ = saveInventoryState(hash)
+					lastInventoryHash = hash
+				}
 			}()
 
 		case <-queueTicker.C:
